@@ -1,0 +1,10 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/shared" },
+    { "path": "./packages/database" },
+    { "path": "./packages/story-engine" },
+    { "path": "./packages/bedrock" },
+    { "path": "./packages/mcp-server" }
+  ]
+}

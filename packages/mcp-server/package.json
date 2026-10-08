@@ -1,0 +1,25 @@
+{
+  "name": "@story-keeper/mcp-server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "development": "./src/index.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "dev": "node --conditions=development --env-file-if-exists=../../.env --import tsx src/index.ts",
+    "start": "node --env-file-if-exists=../../.env dist/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "@story-keeper/shared": "workspace:*",
+    "express": "^5.2.1",
+    "zod": "^4.1.12"
+  }
+}

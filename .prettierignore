@@ -1,0 +1,9 @@
+node_modules
+dist
+coverage
+pnpm-lock.yaml
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+*.md
