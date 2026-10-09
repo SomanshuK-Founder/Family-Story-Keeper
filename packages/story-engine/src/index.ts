@@ -23,6 +23,7 @@ export {
   type GetStoryContextResult,
   type StoryContextConflict,
 } from './privacy-service.js';
+export { PresentationService } from './presentation-service.js';
 export {
   InterviewService,
   type GetNextQuestionResult,

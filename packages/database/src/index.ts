@@ -72,6 +72,15 @@ export {
   type StoryContextRecord,
 } from './privacy-repository.js';
 export {
+  DrizzlePresentationRepository,
+  type PresentationChapterRecord,
+  type PresentationGraphEdgeRecord,
+  type PresentationGraphNodeRecord,
+  type PresentationGraphRecord,
+  type PresentationRepository,
+  type PresentationTimelineRecord,
+} from './presentation-repository.js';
+export {
   DrizzleNarratorMemoryRepository,
   NarratorMemoryRepositoryError,
   type ConflictClaimRecord,

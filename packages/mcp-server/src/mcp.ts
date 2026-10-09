@@ -10,6 +10,7 @@ import type {
   ChapterService,
   FamilyQuestionService,
   NarratorMemoryService,
+  PresentationService,
   PrivacyService,
 } from '@story-keeper/story-engine';
 
@@ -19,10 +20,16 @@ import {
   approveStoryItemOutputSchema,
   deletePendingMemoryInputSchema,
   deletePendingMemoryOutputSchema,
+  getApprovedChaptersInputSchema,
+  getApprovedChaptersOutputSchema,
+  getFamilyGraphInputSchema,
+  getFamilyGraphOutputSchema,
   getNextQuestionInputSchema,
   getNextQuestionOutputSchema,
   getStoryContextInputSchema,
   getStoryContextOutputSchema,
+  getTimelineInputSchema,
+  getTimelineOutputSchema,
   listPendingConflictsInputSchema,
   listPendingConflictsOutputSchema,
   queueFamilyQuestionInputSchema,
@@ -45,6 +52,7 @@ export function createStoryKeeperMcpServer(
   privacyService: PrivacyService,
   familyQuestionService: FamilyQuestionService,
   chapterService: ChapterService,
+  presentationService: PresentationService,
 ): McpServer {
   assertAlexaMcpCompatibility();
 
@@ -189,6 +197,39 @@ export function createStoryKeeperMcpServer(
       executeTool(() => chapterService.reviewChapter(familyId, actorPersonId, chapterDraftId)),
   );
 
+  server.registerTool(
+    'get_timeline',
+    {
+      description: 'Return an approved, family-visible timeline presentation model.',
+      inputSchema: getTimelineInputSchema,
+      outputSchema: getTimelineOutputSchema,
+    },
+    ({ familyId, actorPersonId }) =>
+      executeTool(() => presentationService.getTimeline(familyId, actorPersonId)),
+  );
+
+  server.registerTool(
+    'get_family_graph',
+    {
+      description: 'Return an approved, identity-safe family graph presentation model.',
+      inputSchema: getFamilyGraphInputSchema,
+      outputSchema: getFamilyGraphOutputSchema,
+    },
+    ({ familyId, actorPersonId }) =>
+      executeTool(() => presentationService.getFamilyGraph(familyId, actorPersonId)),
+  );
+
+  server.registerTool(
+    'get_approved_chapters',
+    {
+      description: 'Return approved chapter cards visible to active family members.',
+      inputSchema: getApprovedChaptersInputSchema,
+      outputSchema: getApprovedChaptersOutputSchema,
+    },
+    ({ familyId, actorPersonId }) =>
+      executeTool(() => presentationService.getApprovedChapters(familyId, actorPersonId)),
+  );
+
   return server;
 }
 
@@ -198,6 +239,7 @@ export function createMcpRouter(
   privacyService: PrivacyService,
   familyQuestionService: FamilyQuestionService,
   chapterService: ChapterService,
+  presentationService: PresentationService,
 ): Router {
   const router = Router();
 
@@ -208,6 +250,7 @@ export function createMcpRouter(
       privacyService,
       familyQuestionService,
       chapterService,
+      presentationService,
     );
     const transport = new StreamableHTTPServerTransport({ enableJsonResponse: true });
 

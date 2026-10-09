@@ -85,6 +85,80 @@ Input: `familyId`, `actorPersonId`, `chapterDraftId`.
 Returns a narrator-owned chapter draft and its safe structured source metadata. Raw answers are not
 returned; relatives and children cannot review private drafts.
 
+### `get_timeline`
+
+Input: `familyId`, `actorPersonId`.
+
+Returns approved family-visible timeline events. Known dates sort chronologically; unknown dates
+sort last. Approximate and range dates retain both year bounds and their original precision.
+
+```json
+{
+  "items": [
+    {
+      "id": "a6cc9724-a0a7-4c07-91e7-bf4694587d98",
+      "eventType": "move",
+      "title": "Moved to Delhi",
+      "description": "The family moved to Delhi.",
+      "personId": "be9e1b1b-4132-4ed0-a2a0-6fb89fc0dd86",
+      "personDisplayName": "Rosa",
+      "date": {
+        "earliestYear": 1962,
+        "latestYear": 1964,
+        "precision": "approximate"
+      },
+      "status": "approved",
+      "sourceCount": 1
+    }
+  ]
+}
+```
+
+### `get_family_graph`
+
+Input: `familyId`, `actorPersonId`.
+
+Returns `nodes` and `edges` derived only from approved relationships. Nodes use persisted person
+IDs; unresolved person candidates never appear as confirmed nodes.
+
+```json
+{
+  "nodes": [],
+  "edges": []
+}
+```
+
+### `get_approved_chapters`
+
+Input: `familyId`, `actorPersonId`.
+
+Returns approved chapter cards with narrator identity, approval time, and source count. Pending and
+rejected drafts and raw source answers are never returned.
+
+```json
+{
+  "chapters": [
+    {
+      "chapterId": "34e036bc-c9ae-425c-b2df-5aa8bb2c2020",
+      "title": "A Delhi Childhood",
+      "body": "Rosa remembered the move to Delhi.",
+      "narratorPersonId": "be9e1b1b-4132-4ed0-a2a0-6fb89fc0dd86",
+      "narratorDisplayName": "Rosa",
+      "approvedAt": "2026-01-02T00:00:00.000Z",
+      "sourceCount": 2
+    }
+  ]
+}
+```
+
+## Frontend contract boundary
+
+The exact presentation schemas and TypeScript types live in
+`packages/shared/src/presentation.ts`. The three Phase 8 reads are approved-only for narrators,
+relatives, and children; narrator-private review continues through `get_story_context` and
+`review_chapter`. All 14 MCP tool names and their existing required fields are frozen. Coordinate
+breaking changes with Person B and prefer additive optional fields.
+
 ## Local demo seed
 
 Run `pnpm db:seed` to create the fictional `Story Keeper Demo Family` and narrator `Rosa`. The

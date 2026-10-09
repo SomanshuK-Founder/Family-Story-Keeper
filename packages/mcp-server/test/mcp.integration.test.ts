@@ -18,8 +18,11 @@ import { ALEXA_MCP_PROTOCOL_VERSION } from '../src/protocol.js';
 import {
   approveStoryItemOutputSchema,
   deletePendingMemoryOutputSchema,
+  getApprovedChaptersOutputSchema,
+  getFamilyGraphOutputSchema,
   getNextQuestionOutputSchema,
   getStoryContextOutputSchema,
+  getTimelineOutputSchema,
   listPendingConflictsOutputSchema,
   queueFamilyQuestionOutputSchema,
   requestChapterDraftOutputSchema,
@@ -48,7 +51,7 @@ afterEach(async () => {
 });
 
 describe('MCP Streamable HTTP integration', () => {
-  it('negotiates 2025-11-25 and exposes exactly the Phase 7 tools', async () => {
+  it('negotiates 2025-11-25 and exposes exactly the Phase 8 tools', async () => {
     const runtime = await createRuntime(':memory:');
     const { client, transport } = await connectClient(runtime.mcpUrl);
 
@@ -60,8 +63,11 @@ describe('MCP Streamable HTTP integration', () => {
     expect(tools.tools.map(({ name }) => name).sort()).toEqual([
       'approve_story_item',
       'delete_pending_memory',
+      'get_approved_chapters',
+      'get_family_graph',
       'get_next_question',
       'get_story_context',
+      'get_timeline',
       'list_pending_conflicts',
       'queue_family_question',
       'request_chapter_draft',
@@ -76,6 +82,31 @@ describe('MCP Streamable HTTP integration', () => {
     const runtime = await createRuntime(':memory:');
     const { client } = await connectClient(runtime.mcpUrl);
     const mayaId = addMember(runtime, 'Maya', 'relative');
+    const presentationInput = { familyId: demoSeedIds.familyId, actorPersonId: mayaId };
+    expect(
+      getTimelineOutputSchema.parse(
+        (await client.callTool({ name: 'get_timeline', arguments: presentationInput }))
+          .structuredContent,
+      ),
+    ).toEqual({ items: [] });
+    expect(
+      getFamilyGraphOutputSchema.parse(
+        (await client.callTool({ name: 'get_family_graph', arguments: presentationInput }))
+          .structuredContent,
+      ),
+    ).toEqual({
+      nodes: [
+        expect.objectContaining({ displayName: 'Maya', role: 'relative' }),
+        expect.objectContaining({ displayName: 'Rosa', role: 'narrator' }),
+      ],
+      edges: [],
+    });
+    expect(
+      getApprovedChaptersOutputSchema.parse(
+        (await client.callTool({ name: 'get_approved_chapters', arguments: presentationInput }))
+          .structuredContent,
+      ),
+    ).toEqual({ chapters: [] });
     const started = startInterviewOutputSchema.parse(
       (
         await client.callTool({
@@ -334,6 +365,18 @@ describe('MCP Streamable HTTP integration', () => {
     });
     expect(invalidFamilyQuestion.isError).toBe(true);
 
+    const invalidPresentationActor = await client.callTool({
+      name: 'get_timeline',
+      arguments: { familyId: demoSeedIds.familyId, actorPersonId: 'not-an-opaque-id' },
+    });
+    expect(invalidPresentationActor.isError).toBe(true);
+
+    const crossFamilyPresentation = await client.callTool({
+      name: 'get_family_graph',
+      arguments: { familyId: randomUUID(), actorPersonId: mayaId },
+    });
+    expect(crossFamilyPresentation.isError).toBe(true);
+
     const invalidChapterRequest = await client.callTool({
       name: 'request_chapter_draft',
       arguments: {
@@ -498,6 +541,12 @@ describe('MCP Streamable HTTP integration', () => {
           questionText: privateQuestion,
         },
       });
+      for (const name of ['get_timeline', 'get_family_graph', 'get_approved_chapters']) {
+        await client.callTool({
+          name,
+          arguments: { familyId: demoSeedIds.familyId, actorPersonId: mayaId },
+        });
+      }
 
       const captured = [...log.mock.calls, ...error.mock.calls].flat().join(' ');
       expect(captured).not.toContain(privateText);

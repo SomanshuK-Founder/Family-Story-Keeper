@@ -13,6 +13,7 @@ import {
   DrizzleJobRepository,
   DrizzleNarratorMemoryRepository,
   DrizzlePrivacyRepository,
+  DrizzlePresentationRepository,
   DrizzleStoryMemoryRepository,
   runMigrations,
 } from '@story-keeper/database';
@@ -24,6 +25,7 @@ import {
   FamilyQuestionService,
   InterviewService,
   NarratorMemoryService,
+  PresentationService,
   PrivacyService,
   startChapterWorkerLoop,
   startExtractionWorkerLoop,
@@ -44,6 +46,10 @@ const privacyService = new PrivacyService(
   new DrizzlePrivacyRepository(database),
   narratorMemoryRepository,
 );
+const presentationService = new PresentationService(
+  new DrizzlePrivacyRepository(database),
+  new DrizzlePresentationRepository(database),
+);
 const familyQuestionService = new FamilyQuestionService(
   new DrizzleFamilyQuestionRepository(database),
 );
@@ -60,6 +66,7 @@ const { app } = createApplication(
   privacyService,
   familyQuestionService,
   chapterService,
+  presentationService,
 );
 
 let workerLoop: ExtractionWorkerLoop | undefined;

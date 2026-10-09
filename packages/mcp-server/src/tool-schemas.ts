@@ -3,10 +3,14 @@ import { z } from 'zod';
 import {
   approvalActionSchema,
   approvalTargetTypeSchema,
+  approvedChaptersResponseSchema,
   approximateDateSchema,
   contradictionResolutionTypeSchema,
+  familyGraphResponseSchema,
+  presentationReadInputSchema,
   relationshipTypeSchema,
   storyItemTargetTypeSchema,
+  timelineResponseSchema,
 } from '@story-keeper/shared';
 
 const opaqueId = z.uuid();
@@ -252,3 +256,12 @@ export const reviewChapterOutputSchema = z.object({
     }),
   ),
 });
+
+export const getTimelineInputSchema = presentationReadInputSchema;
+export const getTimelineOutputSchema = timelineResponseSchema;
+
+export const getFamilyGraphInputSchema = presentationReadInputSchema;
+export const getFamilyGraphOutputSchema = familyGraphResponseSchema;
+
+export const getApprovedChaptersInputSchema = presentationReadInputSchema;
+export const getApprovedChaptersOutputSchema = approvedChaptersResponseSchema;
