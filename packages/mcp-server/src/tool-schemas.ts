@@ -192,3 +192,15 @@ export const deletePendingMemoryOutputSchema = z.object({
   status: z.enum(['deleted', 'already_deleted']),
   itemStatus: z.literal('rejected'),
 });
+
+export const queueFamilyQuestionInputSchema = z.object({
+  familyId: opaqueId,
+  fromPersonId: opaqueId,
+  toPersonId: opaqueId,
+  questionText: z.string().trim().min(1).max(500),
+});
+
+export const queueFamilyQuestionOutputSchema = z.object({
+  queuedQuestionId: opaqueId,
+  status: z.literal('queued'),
+});

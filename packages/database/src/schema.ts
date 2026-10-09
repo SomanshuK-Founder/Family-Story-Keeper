@@ -18,6 +18,7 @@ import type {
   ContradictionType,
   DatePrecision,
   RelationshipType,
+  QueuedQuestionStatus,
   StoryItemStatus,
   StoryItemTargetType,
 } from '@story-keeper/shared';
@@ -126,13 +127,14 @@ export const questions = sqliteTable(
       .$type<
         | 'phase_one_prompt'
         | 'contradiction_clarification'
+        | 'family_question'
         | 'person_clarification'
         | 'memory_follow_up'
       >()
       .notNull(),
     text: text('text').notNull(),
     source: text('source')
-      .$type<'planner' | 'contradiction' | 'clarification' | 'follow_up'>()
+      .$type<'planner' | 'contradiction' | 'family_queue' | 'clarification' | 'follow_up'>()
       .notNull(),
     sourceReferenceId: text('source_reference_id'),
     status: text('status').$type<'asked' | 'answered' | 'superseded'>().notNull(),
@@ -157,13 +159,87 @@ export const questions = sqliteTable(
     }).onDelete('cascade'),
     check(
       'questions_type_check',
-      sql`${table.type} IN ('phase_one_prompt', 'contradiction_clarification', 'person_clarification', 'memory_follow_up')`,
+      sql`${table.type} IN ('phase_one_prompt', 'contradiction_clarification', 'family_question', 'person_clarification', 'memory_follow_up')`,
     ),
     check(
       'questions_source_check',
-      sql`${table.source} IN ('planner', 'contradiction', 'clarification', 'follow_up')`,
+      sql`${table.source} IN ('planner', 'contradiction', 'family_queue', 'clarification', 'follow_up')`,
     ),
     check('questions_status_check', sql`${table.status} IN ('asked', 'answered', 'superseded')`),
+  ],
+);
+
+export const queuedQuestions = sqliteTable(
+  'queued_questions',
+  {
+    id: text('id').primaryKey(),
+    familyId: text('family_id')
+      .notNull()
+      .references(() => families.id, { onDelete: 'cascade' }),
+    fromPersonId: text('from_person_id').notNull(),
+    toPersonId: text('to_person_id').notNull(),
+    questionText: text('question_text').notNull(),
+    status: text('status').$type<QueuedQuestionStatus>().notNull().default('queued'),
+    priority: integer('priority').notNull().default(0),
+    createdAt: createdAt(),
+    askedAt: integer('asked_at', { mode: 'timestamp_ms' }),
+    answeredAt: integer('answered_at', { mode: 'timestamp_ms' }),
+  },
+  (table) => [
+    uniqueIndex('queued_questions_family_id_id_unique').on(table.familyId, table.id),
+    index('queued_questions_planner_idx').on(
+      table.familyId,
+      table.toPersonId,
+      table.status,
+      table.priority,
+      table.createdAt,
+      table.id,
+    ),
+    foreignKey({
+      columns: [table.familyId, table.fromPersonId],
+      foreignColumns: [people.familyId, people.id],
+      name: 'queued_questions_family_sender_fk',
+    }).onDelete('restrict'),
+    foreignKey({
+      columns: [table.familyId, table.toPersonId],
+      foreignColumns: [people.familyId, people.id],
+      name: 'queued_questions_family_target_fk',
+    }).onDelete('restrict'),
+    check(
+      'queued_questions_people_distinct_check',
+      sql`${table.fromPersonId} <> ${table.toPersonId}`,
+    ),
+    check(
+      'queued_questions_text_check',
+      sql`length(trim(${table.questionText})) > 0 AND length(${table.questionText}) <= 500`,
+    ),
+    check(
+      'queued_questions_status_check',
+      sql`${table.status} IN ('queued', 'asked', 'answered', 'skipped', 'withdrawn')`,
+    ),
+    check(
+      'queued_questions_priority_check',
+      sql`${table.priority} >= 0 AND ${table.priority} <= 100`,
+    ),
+    check(
+      'queued_questions_lifecycle_check',
+      sql`(
+        ${table.status} = 'queued'
+        AND ${table.askedAt} IS NULL
+        AND ${table.answeredAt} IS NULL
+      ) OR (
+        ${table.status} = 'asked'
+        AND ${table.askedAt} IS NOT NULL
+        AND ${table.answeredAt} IS NULL
+      ) OR (
+        ${table.status} = 'answered'
+        AND ${table.askedAt} IS NOT NULL
+        AND ${table.answeredAt} IS NOT NULL
+      ) OR (
+        ${table.status} IN ('skipped', 'withdrawn')
+        AND ${table.answeredAt} IS NULL
+      )`,
+    ),
   ],
 );
 

@@ -1,5 +1,10 @@
 export { StoryKeeperError, type StoryKeeperErrorCode } from './errors.js';
 export {
+  FamilyQuestionService,
+  type PlannedFamilyQuestion,
+  type QueueFamilyQuestionResult,
+} from './family-question-service.js';
+export {
   PrivacyService,
   type ApproveStoryItemResult,
   type DeletePendingMemoryResult,

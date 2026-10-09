@@ -112,6 +112,16 @@ export class NarratorMemoryService {
     interview: InterviewRecord,
     usedSourceReferences: ReadonlySet<string>,
   ): PlannedQuestion | undefined {
+    return (
+      this.planContradictionQuestion(interview, usedSourceReferences) ??
+      this.planMemoryQuestion(interview, usedSourceReferences)
+    );
+  }
+
+  public planContradictionQuestion(
+    interview: InterviewRecord,
+    usedSourceReferences: ReadonlySet<string>,
+  ): PlannedQuestion | undefined {
     for (const conflict of this.memory.listPendingConflicts(
       interview.familyId,
       interview.narratorPersonId,
@@ -127,6 +137,13 @@ export class NarratorMemoryService {
       }
     }
 
+    return undefined;
+  }
+
+  public planMemoryQuestion(
+    interview: InterviewRecord,
+    usedSourceReferences: ReadonlySet<string>,
+  ): PlannedQuestion | undefined {
     for (const candidate of this.memory.listUnresolvedPersonCandidates(
       interview.familyId,
       interview.narratorPersonId,

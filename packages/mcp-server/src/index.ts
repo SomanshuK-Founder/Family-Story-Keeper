@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { BedrockStoryExtractionProvider } from '@story-keeper/bedrock';
 import {
   createDatabase,
+  DrizzleFamilyQuestionRepository,
   DrizzleExtractionRepository,
   DrizzleInterviewRepository,
   DrizzleJobRepository,
@@ -14,6 +15,7 @@ import {
 import { loadConfig } from '@story-keeper/shared';
 import {
   ExtractionWorker,
+  FamilyQuestionService,
   InterviewService,
   NarratorMemoryService,
   PrivacyService,
@@ -34,8 +36,20 @@ const privacyService = new PrivacyService(
   new DrizzlePrivacyRepository(database),
   narratorMemoryRepository,
 );
-const interviewService = new InterviewService(repository, narratorMemoryService);
-const { app } = createApplication(interviewService, narratorMemoryService, privacyService);
+const familyQuestionService = new FamilyQuestionService(
+  new DrizzleFamilyQuestionRepository(database),
+);
+const interviewService = new InterviewService(
+  repository,
+  narratorMemoryService,
+  familyQuestionService,
+);
+const { app } = createApplication(
+  interviewService,
+  narratorMemoryService,
+  privacyService,
+  familyQuestionService,
+);
 
 let workerLoop: ExtractionWorkerLoop | undefined;
 if (config.extraction.provider === 'bedrock') {

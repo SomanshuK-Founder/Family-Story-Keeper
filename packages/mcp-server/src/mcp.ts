@@ -7,6 +7,7 @@ import { Router, type Response } from 'express';
 import { StoryKeeperError } from '@story-keeper/story-engine';
 import type {
   InterviewService,
+  FamilyQuestionService,
   NarratorMemoryService,
   PrivacyService,
 } from '@story-keeper/story-engine';
@@ -23,6 +24,8 @@ import {
   getStoryContextOutputSchema,
   listPendingConflictsInputSchema,
   listPendingConflictsOutputSchema,
+  queueFamilyQuestionInputSchema,
+  queueFamilyQuestionOutputSchema,
   resolveConflictInputSchema,
   resolveConflictOutputSchema,
   saveAnswerInputSchema,
@@ -35,6 +38,7 @@ export function createStoryKeeperMcpServer(
   interviewService: InterviewService,
   narratorMemoryService: NarratorMemoryService,
   privacyService: PrivacyService,
+  familyQuestionService: FamilyQuestionService,
 ): McpServer {
   assertAlexaMcpCompatibility();
 
@@ -142,6 +146,19 @@ export function createStoryKeeperMcpServer(
       ),
   );
 
+  server.registerTool(
+    'queue_family_question',
+    {
+      description: 'Queue a private family question for a same-family narrator.',
+      inputSchema: queueFamilyQuestionInputSchema,
+      outputSchema: queueFamilyQuestionOutputSchema,
+    },
+    ({ familyId, fromPersonId, toPersonId, questionText }) =>
+      executeTool(() =>
+        familyQuestionService.queueFamilyQuestion(familyId, fromPersonId, toPersonId, questionText),
+      ),
+  );
+
   return server;
 }
 
@@ -149,6 +166,7 @@ export function createMcpRouter(
   interviewService: InterviewService,
   narratorMemoryService: NarratorMemoryService,
   privacyService: PrivacyService,
+  familyQuestionService: FamilyQuestionService,
 ): Router {
   const router = Router();
 
@@ -157,6 +175,7 @@ export function createMcpRouter(
       interviewService,
       narratorMemoryService,
       privacyService,
+      familyQuestionService,
     );
     const transport = new StreamableHTTPServerTransport({ enableJsonResponse: true });
 

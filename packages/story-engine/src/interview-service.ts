@@ -6,6 +6,7 @@ import type {
 } from '@story-keeper/database';
 
 import { StoryKeeperError } from './errors.js';
+import type { FamilyQuestionService } from './family-question-service.js';
 import { phaseOneQuestionBank } from './question-bank.js';
 import type { NarratorMemoryService } from './narrator-memory-service.js';
 
@@ -35,6 +36,7 @@ export class InterviewService {
   public constructor(
     private readonly repository: InterviewRepository,
     private readonly narratorMemory?: NarratorMemoryService,
+    private readonly familyQuestions?: FamilyQuestionService,
   ) {}
 
   public startInterview(familyId: string, personId: string): StartInterviewResult {
@@ -152,16 +154,25 @@ export class InterviewService {
     const usedKeys = new Set(
       this.repository.listQuestionSourceReferences(interview.familyId, interview.id),
     );
-    const planned = this.narratorMemory?.planNextQuestion(interview, usedKeys);
-    if (planned !== undefined) {
-      return this.repository.createQuestion({
+    const contradiction = this.narratorMemory?.planContradictionQuestion(interview, usedKeys);
+    if (contradiction !== undefined) {
+      return this.createPlannedQuestion(interview, contradiction);
+    }
+
+    const familyQuestion = this.familyQuestions?.planNextQuestion(interview);
+    if (familyQuestion !== undefined && !usedKeys.has(familyQuestion.sourceReferenceId)) {
+      return this.repository.createFamilyQuestion({
         familyId: interview.familyId,
         interviewId: interview.id,
-        text: planned.text,
-        type: planned.type,
-        source: planned.source,
-        sourceReferenceId: planned.sourceReferenceId,
+        narratorPersonId: interview.narratorPersonId,
+        queuedQuestionId: familyQuestion.queuedQuestionId,
+        text: familyQuestion.text,
       });
+    }
+
+    const memoryQuestion = this.narratorMemory?.planMemoryQuestion(interview, usedKeys);
+    if (memoryQuestion !== undefined) {
+      return this.createPlannedQuestion(interview, memoryQuestion);
     }
     const next = phaseOneQuestionBank.find((question) => !usedKeys.has(question.key));
 
@@ -173,6 +184,20 @@ export class InterviewService {
           text: next.text,
           sourceReferenceId: next.key,
         });
+  }
+
+  private createPlannedQuestion(
+    interview: InterviewRecord,
+    planned: NonNullable<ReturnType<NarratorMemoryService['planNextQuestion']>>,
+  ): QuestionRecord {
+    return this.repository.createQuestion({
+      familyId: interview.familyId,
+      interviewId: interview.id,
+      text: planned.text,
+      type: planned.type,
+      source: planned.source,
+      sourceReferenceId: planned.sourceReferenceId,
+    });
   }
 
   private toStartResult(

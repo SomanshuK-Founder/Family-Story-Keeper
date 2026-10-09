@@ -55,6 +55,7 @@ describe('database foundation', () => {
         'people',
         'person_candidates',
         'questions',
+        'queued_questions',
         'relationship_sources',
         'relationships',
         'timeline_event_sources',
@@ -62,7 +63,7 @@ describe('database foundation', () => {
       ]);
       expect(
         database.client.prepare('SELECT count(*) AS count FROM __drizzle_migrations').get(),
-      ).toEqual({ count: 6 });
+      ).toEqual({ count: 7 });
     } finally {
       database.close();
     }
@@ -108,13 +109,13 @@ describe('database foundation', () => {
       expect(tableExists(database, 'person_candidates')).toBe(true);
       expect(
         database.client.prepare('SELECT count(*) AS count FROM __drizzle_migrations').get(),
-      ).toEqual({ count: 6 });
+      ).toEqual({ count: 7 });
     } finally {
       database.close();
     }
   });
 
-  it('migrates a populated Phase 3 database forward through Phase 5', () => {
+  it('migrates a populated Phase 3 database forward through Phase 6', () => {
     const directory = mkdtempSync(join(tmpdir(), 'story-keeper-phase-four-upgrade-'));
     temporaryDirectories.push(directory);
     const phaseThreeMigrations = join(directory, 'phase-three-migrations');
@@ -185,13 +186,13 @@ describe('database foundation', () => {
       ).toEqual({ name: 'resolved_by_person_id' });
       expect(
         database.client.prepare('SELECT count(*) AS count FROM __drizzle_migrations').get(),
-      ).toEqual({ count: 6 });
+      ).toEqual({ count: 7 });
     } finally {
       database.close();
     }
   });
 
-  it('migrates an existing Phase 4 database forward to Phase 5', () => {
+  it('migrates an existing Phase 4 database forward through Phase 6', () => {
     const directory = mkdtempSync(join(tmpdir(), 'story-keeper-phase-five-upgrade-'));
     temporaryDirectories.push(directory);
     const phaseFourMigrations = join(directory, 'phase-four-migrations');
@@ -234,7 +235,65 @@ describe('database foundation', () => {
       expect(database.client.pragma('foreign_key_check')).toEqual([]);
       expect(
         database.client.prepare('SELECT count(*) AS count FROM __drizzle_migrations').get(),
-      ).toEqual({ count: 6 });
+      ).toEqual({ count: 7 });
+    } finally {
+      database.close();
+    }
+  });
+
+  it('migrates a populated Phase 5 database forward to Phase 6', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'story-keeper-phase-six-upgrade-'));
+    temporaryDirectories.push(directory);
+    const phaseFiveMigrations = join(directory, 'phase-five-migrations');
+    mkdirSync(join(phaseFiveMigrations, 'meta'), { recursive: true });
+    for (const migration of [
+      '0000_phase_zero.sql',
+      '0001_phase_one_interviews.sql',
+      '0002_phase_two_story_memory.sql',
+      '0003_phase_three_extraction_jobs.sql',
+      '0004_phase_four_conflict_resolution.sql',
+      '0005_phase_five_approval_privacy.sql',
+    ]) {
+      copyFileSync(join(defaultMigrationsFolder, migration), join(phaseFiveMigrations, migration));
+    }
+    const journal = JSON.parse(
+      readFileSync(join(defaultMigrationsFolder, 'meta', '_journal.json'), 'utf8'),
+    ) as MigrationJournal;
+    writeFileSync(
+      join(phaseFiveMigrations, 'meta', '_journal.json'),
+      JSON.stringify({ ...journal, entries: journal.entries.slice(0, 6) }),
+    );
+
+    const database = createDatabase(join(directory, 'phase-five.sqlite'));
+    try {
+      runMigrations(database, phaseFiveMigrations);
+      seedDemoData(database);
+      const now = Date.now();
+      const approvalId = '50000000-0000-4000-8000-000000000001';
+      database.client
+        .prepare(
+          `INSERT INTO approvals
+             (id, family_id, actor_person_id, target_type, target_id, action, created_at)
+           VALUES (?, ?, ?, 'fact', ?, 'approve', ?)`,
+        )
+        .run(
+          approvalId,
+          demoSeedIds.familyId,
+          demoSeedIds.rosaPersonId,
+          '50000000-0000-4000-8000-000000000002',
+          now,
+        );
+
+      runMigrations(database);
+
+      expect(tableExists(database, 'queued_questions')).toBe(true);
+      expect(
+        database.client.prepare('SELECT action FROM approvals WHERE id = ?').get(approvalId),
+      ).toEqual({ action: 'approve' });
+      expect(database.client.pragma('foreign_key_check')).toEqual([]);
+      expect(
+        database.client.prepare('SELECT count(*) AS count FROM __drizzle_migrations').get(),
+      ).toEqual({ count: 7 });
     } finally {
       database.close();
     }

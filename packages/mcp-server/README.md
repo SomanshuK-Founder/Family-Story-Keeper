@@ -24,9 +24,10 @@ Persists the raw text unchanged and returns `{ answerId, status: "saved" }`.
 Input: `familyId`, `interviewId`.
 
 Returns one stable shape. While questions remain, `status` is `question` and question fields are
-strings. The deterministic planner prioritizes narrator-relevant contradictions and clarifications
-before the fallback interview bank. When no question remains, `status` is `complete` and both
-question fields are `null`.
+strings. After any current unanswered question, the deterministic planner prioritizes
+narrator-relevant contradictions, queued family questions, and memory clarifications before the
+fallback interview bank. When no question remains, `status` is `complete` and both question fields
+are `null`.
 
 ### `list_pending_conflicts`
 
@@ -60,6 +61,13 @@ fact, relationship, or timeline event.
 Input: `familyId`, `actorPersonId`, `targetType`, `targetId`.
 
 Invalidates eligible pending derived memory while preserving source evidence and audit metadata.
+
+### `queue_family_question`
+
+Input: `familyId`, `fromPersonId`, `toPersonId`, `questionText`.
+
+Lets an active relative or child queue a private, bounded question for an active narrator in the
+same family. It returns the stable queued-question ID and `queued` status.
 
 ## Local demo seed
 

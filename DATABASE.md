@@ -99,9 +99,10 @@ Possible sources:
 - clarification
 - follow_up
 
-Phase 4 question types:
+Question types through Phase 6:
 - phase_one_prompt
 - contradiction_clarification
+- family_question
 - person_clarification
 - memory_follow_up
 
@@ -254,6 +255,11 @@ Status:
 - answered
 - skipped
 - withdrawn
+
+Family questions are selected by priority descending, then creation time and stable ID ascending.
+Surfacing one creates an ordinary interview question with source `family_queue` and a stable source
+reference, while atomically moving the queue item to `asked`. Saving its answer atomically moves the
+queue item to `answered` alongside the raw answer and extraction job.
 
 ## Chapters
 

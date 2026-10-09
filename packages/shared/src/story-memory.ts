@@ -21,6 +21,16 @@ export const consentEventTypes = [
 export const consentEventTypeSchema = z.enum(consentEventTypes);
 export type ConsentEventType = z.infer<typeof consentEventTypeSchema>;
 
+export const queuedQuestionStatuses = [
+  'queued',
+  'asked',
+  'answered',
+  'skipped',
+  'withdrawn',
+] as const;
+export const queuedQuestionStatusSchema = z.enum(queuedQuestionStatuses);
+export type QueuedQuestionStatus = z.infer<typeof queuedQuestionStatusSchema>;
+
 export const relationshipTypes = [
   'sibling',
   'spouse',

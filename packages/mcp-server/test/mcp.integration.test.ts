@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
@@ -10,7 +11,7 @@ import {
   LATEST_PROTOCOL_VERSION,
   SUPPORTED_PROTOCOL_VERSIONS,
 } from '@modelcontextprotocol/sdk/types.js';
-import { demoSeedIds, DrizzleStoryMemoryRepository } from '@story-keeper/database';
+import { demoSeedIds, DrizzleStoryMemoryRepository, schema } from '@story-keeper/database';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ALEXA_MCP_PROTOCOL_VERSION } from '../src/protocol.js';
@@ -20,6 +21,7 @@ import {
   getNextQuestionOutputSchema,
   getStoryContextOutputSchema,
   listPendingConflictsOutputSchema,
+  queueFamilyQuestionOutputSchema,
   resolveConflictOutputSchema,
   saveAnswerOutputSchema,
   startInterviewOutputSchema,
@@ -44,7 +46,7 @@ afterEach(async () => {
 });
 
 describe('MCP Streamable HTTP integration', () => {
-  it('negotiates 2025-11-25 and exposes exactly the Phase 5 tools', async () => {
+  it('negotiates 2025-11-25 and exposes exactly the Phase 6 tools', async () => {
     const runtime = await createRuntime(':memory:');
     const { client, transport } = await connectClient(runtime.mcpUrl);
 
@@ -59,6 +61,7 @@ describe('MCP Streamable HTTP integration', () => {
       'get_next_question',
       'get_story_context',
       'list_pending_conflicts',
+      'queue_family_question',
       'resolve_conflict',
       'save_answer',
       'start_interview',
@@ -68,6 +71,7 @@ describe('MCP Streamable HTTP integration', () => {
   it('calls all Story Keeper tools and rejects malformed or unknown calls', async () => {
     const runtime = await createRuntime(':memory:');
     const { client } = await connectClient(runtime.mcpUrl);
+    const mayaId = addMember(runtime, 'Maya', 'relative');
     const started = startInterviewOutputSchema.parse(
       (
         await client.callTool({
@@ -202,6 +206,21 @@ describe('MCP Streamable HTTP integration', () => {
     );
     expect(deleted).toMatchObject({ status: 'deleted', itemStatus: 'rejected' });
 
+    const queued = queueFamilyQuestionOutputSchema.parse(
+      (
+        await client.callTool({
+          name: 'queue_family_question',
+          arguments: {
+            familyId: demoSeedIds.familyId,
+            fromPersonId: mayaId,
+            toPersonId: demoSeedIds.rosaPersonId,
+            questionText: 'How did you meet Grandpa?',
+          },
+        })
+      ).structuredContent,
+    );
+    expect(queued.status).toBe('queued');
+
     const nextResult = await client.callTool({
       name: 'get_next_question',
       arguments: {
@@ -252,6 +271,17 @@ describe('MCP Streamable HTTP integration', () => {
       },
     });
     expect(invalidTarget.isError).toBe(true);
+
+    const invalidFamilyQuestion = await client.callTool({
+      name: 'queue_family_question',
+      arguments: {
+        familyId: demoSeedIds.familyId,
+        fromPersonId: mayaId,
+        toPersonId: demoSeedIds.rosaPersonId,
+        questionText: '   ',
+      },
+    });
+    expect(invalidFamilyQuestion.isError).toBe(true);
 
     const unknown = CallToolResultSchema.parse(
       await client.callTool({
@@ -367,6 +397,7 @@ describe('MCP Streamable HTTP integration', () => {
     try {
       const runtime = await createRuntime(':memory:');
       const { client } = await connectClient(runtime.mcpUrl);
+      const mayaId = addMember(runtime, 'Maya', 'relative');
       const started = startInterviewOutputSchema.parse(
         (
           await client.callTool({
@@ -379,6 +410,7 @@ describe('MCP Streamable HTTP integration', () => {
         ).structuredContent,
       );
       const privateText = 'Rosa hid the blue diary under the stairs.';
+      const privateQuestion = 'Why was the blue diary hidden under the stairs?';
       await client.callTool({
         name: 'save_answer',
         arguments: {
@@ -395,9 +427,19 @@ describe('MCP Streamable HTTP integration', () => {
           actorPersonId: demoSeedIds.rosaPersonId,
         },
       });
+      await client.callTool({
+        name: 'queue_family_question',
+        arguments: {
+          familyId: demoSeedIds.familyId,
+          fromPersonId: mayaId,
+          toPersonId: demoSeedIds.rosaPersonId,
+          questionText: privateQuestion,
+        },
+      });
 
       const captured = [...log.mock.calls, ...error.mock.calls].flat().join(' ');
       expect(captured).not.toContain(privateText);
+      expect(captured).not.toContain(privateQuestion);
     } finally {
       log.mockRestore();
       error.mockRestore();
@@ -430,4 +472,37 @@ async function closeRuntime(runtime: TestRuntime): Promise<void> {
   const index = openRuntimes.indexOf(runtime);
   if (index >= 0) openRuntimes.splice(index, 1);
   await runtime.close();
+}
+
+function addMember(
+  runtime: TestRuntime,
+  displayName: string,
+  role: 'narrator' | 'relative' | 'child',
+): string {
+  const personId = randomUUID();
+  const now = new Date();
+  runtime.database.db
+    .insert(schema.people)
+    .values({
+      id: personId,
+      familyId: demoSeedIds.familyId,
+      canonicalDisplayName: displayName,
+      status: 'active',
+      createdAt: now,
+      updatedAt: now,
+    })
+    .run();
+  runtime.database.db
+    .insert(schema.familyMemberships)
+    .values({
+      id: randomUUID(),
+      familyId: demoSeedIds.familyId,
+      personId,
+      role,
+      status: 'active',
+      createdAt: now,
+      updatedAt: now,
+    })
+    .run();
+  return personId;
 }

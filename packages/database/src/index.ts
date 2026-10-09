@@ -1,8 +1,17 @@
 export { createDatabase, type StoryKeeperDatabase } from './database.js';
 export {
+  DrizzleFamilyQuestionRepository,
+  FamilyQuestionRepositoryError,
+  type FamilyQuestionRepository,
+  type FamilyQuestionRepositoryErrorCode,
+  type QueueFamilyQuestionInput,
+  type QueuedFamilyQuestionRecord,
+} from './family-question-repository.js';
+export {
   DrizzleInterviewRepository,
   type AnswerRecord,
   type CreateAnswerInput,
+  type CreateFamilyQuestionInput,
   type CreateQuestionInput,
   type FamilyMemberRecord,
   type InterviewRecord,

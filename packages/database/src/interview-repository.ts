@@ -10,6 +10,7 @@ import {
   interviewSessions,
   jobs,
   people,
+  queuedQuestions,
   questions,
 } from './schema.js';
 
@@ -34,9 +35,10 @@ export interface QuestionRecord {
   readonly type:
     | 'phase_one_prompt'
     | 'contradiction_clarification'
+    | 'family_question'
     | 'person_clarification'
     | 'memory_follow_up';
-  readonly source: 'planner' | 'contradiction' | 'clarification' | 'follow_up';
+  readonly source: 'planner' | 'contradiction' | 'family_queue' | 'clarification' | 'follow_up';
   readonly sourceReferenceId: string | null;
   readonly status: 'asked' | 'answered' | 'superseded';
 }
@@ -63,6 +65,14 @@ export interface CreateAnswerInput {
   readonly rawText: string;
 }
 
+export interface CreateFamilyQuestionInput {
+  readonly familyId: string;
+  readonly interviewId: string;
+  readonly narratorPersonId: string;
+  readonly queuedQuestionId: string;
+  readonly text: string;
+}
+
 export interface InterviewRepository {
   familyExists(familyId: string): boolean;
   findActiveFamilyMember(familyId: string, personId: string): FamilyMemberRecord | undefined;
@@ -77,6 +87,7 @@ export interface InterviewRepository {
   ): QuestionRecord | undefined;
   listQuestionSourceReferences(familyId: string, interviewId: string): readonly string[];
   createQuestion(input: CreateQuestionInput): QuestionRecord;
+  createFamilyQuestion(input: CreateFamilyQuestionInput): QuestionRecord;
   createAnswer(input: CreateAnswerInput): AnswerRecord;
   findAnswerByQuestion(
     familyId: string,
@@ -295,11 +306,82 @@ export class DrizzleInterviewRepository implements InterviewRepository {
     };
   }
 
+  public createFamilyQuestion(input: CreateFamilyQuestionInput): QuestionRecord {
+    const sourceReferenceId = `family_queue:${input.queuedQuestionId}`;
+    const existing = this.findQuestionBySourceReference(
+      input.familyId,
+      input.interviewId,
+      sourceReferenceId,
+    );
+    if (existing !== undefined) return existing;
+
+    const id = randomUUID();
+    const now = new Date();
+    return this.database.db.transaction((transaction) => {
+      const queueUpdate = transaction
+        .update(queuedQuestions)
+        .set({ status: 'asked', askedAt: now })
+        .where(
+          and(
+            eq(queuedQuestions.familyId, input.familyId),
+            eq(queuedQuestions.id, input.queuedQuestionId),
+            eq(queuedQuestions.toPersonId, input.narratorPersonId),
+            eq(queuedQuestions.status, 'queued'),
+          ),
+        )
+        .run();
+      if (queueUpdate.changes !== 1) {
+        throw new Error('The queued family question is no longer available.');
+      }
+
+      transaction
+        .insert(questions)
+        .values({
+          id,
+          familyId: input.familyId,
+          interviewSessionId: input.interviewId,
+          type: 'family_question',
+          text: input.text,
+          source: 'family_queue',
+          sourceReferenceId,
+          status: 'asked',
+          askedAt: now,
+          createdAt: now,
+        })
+        .run();
+
+      return {
+        id,
+        familyId: input.familyId,
+        interviewId: input.interviewId,
+        text: input.text,
+        type: 'family_question',
+        source: 'family_queue',
+        sourceReferenceId,
+        status: 'asked',
+      };
+    });
+  }
+
   public createAnswer(input: CreateAnswerInput): AnswerRecord {
     const id = randomUUID();
     const now = new Date();
 
     this.database.db.transaction((transaction) => {
+      const question = transaction
+        .select({ source: questions.source, sourceReferenceId: questions.sourceReferenceId })
+        .from(questions)
+        .where(
+          and(
+            eq(questions.familyId, input.familyId),
+            eq(questions.interviewSessionId, input.interviewId),
+            eq(questions.id, input.questionId),
+          ),
+        )
+        .limit(1)
+        .get();
+      if (question === undefined) throw new Error('The interview question was not found.');
+
       transaction
         .insert(answers)
         .values({
@@ -352,6 +434,25 @@ export class DrizzleInterviewRepository implements InterviewRepository {
           ),
         )
         .run();
+
+      if (question.source === 'family_queue') {
+        const queuedQuestionId = parseFamilyQueueReference(question.sourceReferenceId);
+        const queueUpdate = transaction
+          .update(queuedQuestions)
+          .set({ status: 'answered', answeredAt: now })
+          .where(
+            and(
+              eq(queuedQuestions.familyId, input.familyId),
+              eq(queuedQuestions.id, queuedQuestionId),
+              eq(queuedQuestions.toPersonId, input.narratorPersonId),
+              eq(queuedQuestions.status, 'asked'),
+            ),
+          )
+          .run();
+        if (queueUpdate.changes !== 1) {
+          throw new Error('The queued family question is not awaiting an answer.');
+        }
+      }
     });
 
     return { id, rawText: input.rawText };
@@ -384,4 +485,44 @@ export class DrizzleInterviewRepository implements InterviewRepository {
       .where(and(eq(interviewSessions.familyId, familyId), eq(interviewSessions.id, interviewId)))
       .run();
   }
+
+  private findQuestionBySourceReference(
+    familyId: string,
+    interviewId: string,
+    sourceReferenceId: string,
+  ): QuestionRecord | undefined {
+    return this.database.db
+      .select({
+        id: questions.id,
+        familyId: questions.familyId,
+        interviewId: questions.interviewSessionId,
+        text: questions.text,
+        type: questions.type,
+        source: questions.source,
+        sourceReferenceId: questions.sourceReferenceId,
+        status: questions.status,
+      })
+      .from(questions)
+      .where(
+        and(
+          eq(questions.familyId, familyId),
+          eq(questions.interviewSessionId, interviewId),
+          eq(questions.sourceReferenceId, sourceReferenceId),
+        ),
+      )
+      .limit(1)
+      .get();
+  }
+}
+
+function parseFamilyQueueReference(sourceReferenceId: string | null): string {
+  const prefix = 'family_queue:';
+  if (sourceReferenceId === null || !sourceReferenceId.startsWith(prefix)) {
+    throw new Error('The family question source reference is invalid.');
+  }
+  const queuedQuestionId = sourceReferenceId.slice(prefix.length);
+  if (queuedQuestionId.length === 0) {
+    throw new Error('The family question source reference is invalid.');
+  }
+  return queuedQuestionId;
 }

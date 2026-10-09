@@ -43,6 +43,13 @@
       "when": 1791678600000,
       "tag": "0005_phase_five_approval_privacy",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1791765000000,
+      "tag": "0006_phase_six_family_questions",
+      "breakpoints": true
     }
   ]
 }

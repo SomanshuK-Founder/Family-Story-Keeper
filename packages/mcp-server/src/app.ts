@@ -3,6 +3,7 @@ import type { Express } from 'express';
 
 import type {
   InterviewService,
+  FamilyQuestionService,
   NarratorMemoryService,
   PrivacyService,
 } from '@story-keeper/story-engine';
@@ -17,6 +18,7 @@ export function createApplication(
   interviewService: InterviewService,
   narratorMemoryService: NarratorMemoryService,
   privacyService: PrivacyService,
+  familyQuestionService: FamilyQuestionService,
 ): StoryKeeperApplication {
   const app = createMcpExpressApp();
 
@@ -26,7 +28,10 @@ export function createApplication(
     response.status(200).json({ status: 'ok' });
   });
 
-  app.use('/mcp', createMcpRouter(interviewService, narratorMemoryService, privacyService));
+  app.use(
+    '/mcp',
+    createMcpRouter(interviewService, narratorMemoryService, privacyService, familyQuestionService),
+  );
 
   return { app };
 }

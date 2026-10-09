@@ -31,6 +31,8 @@ export {
   datePrecisionSchema,
   relationshipTypes,
   relationshipTypeSchema,
+  queuedQuestionStatuses,
+  queuedQuestionStatusSchema,
   storyItemStatuses,
   storyItemStatusSchema,
   storyItemTargetTypes,
@@ -43,6 +45,7 @@ export {
   type ContradictionType,
   type DatePrecision,
   type RelationshipType,
+  type QueuedQuestionStatus,
   type StoryItemStatus,
   type StoryItemTargetType,
 } from './story-memory.js';
