@@ -7,5 +7,5 @@
     "tsBuildInfoFile": "dist/.tsbuildinfo"
   },
   "include": ["src/**/*.ts"],
-  "references": [{ "path": "../database" }, { "path": "../shared" }]
+  "references": [{ "path": "../bedrock" }, { "path": "../database" }, { "path": "../shared" }]
 }

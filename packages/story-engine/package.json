@@ -13,7 +13,9 @@
     }
   },
   "dependencies": {
+    "@story-keeper/bedrock": "workspace:*",
     "@story-keeper/database": "workspace:*",
-    "@story-keeper/shared": "workspace:*"
+    "@story-keeper/shared": "workspace:*",
+    "zod": "^4.1.12"
   }
 }

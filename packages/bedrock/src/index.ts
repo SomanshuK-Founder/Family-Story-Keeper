@@ -1,2 +1,6 @@
-/** Package boundary for the Bedrock adapter introduced in a later phase. */
-export const bedrockPackage = '@story-keeper/bedrock';
+export {
+  BedrockStoryExtractionProvider,
+  type BedrockStoryExtractionConfig,
+} from './bedrock-provider.js';
+export { MockStoryExtractionProvider } from './mock-provider.js';
+export { StoryExtractionProviderError, type StoryExtractionProvider } from './provider.js';

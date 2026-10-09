@@ -49,55 +49,64 @@ describe('database foundation', () => {
         'families',
         'family_memberships',
         'interview_sessions',
+        'jobs',
         'people',
+        'person_candidates',
         'questions',
+        'relationship_sources',
         'relationships',
+        'timeline_event_sources',
         'timeline_events',
       ]);
       expect(
         database.client.prepare('SELECT count(*) AS count FROM __drizzle_migrations').get(),
-      ).toEqual({ count: 3 });
+      ).toEqual({ count: 4 });
     } finally {
       database.close();
     }
   });
 
-  it('migrates an existing Phase 1 database forward to Phase 2', () => {
+  it('migrates an existing Phase 2 database forward to Phase 3', () => {
     const directory = mkdtempSync(join(tmpdir(), 'story-keeper-upgrade-'));
     temporaryDirectories.push(directory);
-    const phaseOneMigrations = join(directory, 'phase-one-migrations');
-    mkdirSync(join(phaseOneMigrations, 'meta'), { recursive: true });
+    const phaseTwoMigrations = join(directory, 'phase-two-migrations');
+    mkdirSync(join(phaseTwoMigrations, 'meta'), { recursive: true });
     copyFileSync(
       join(defaultMigrationsFolder, '0000_phase_zero.sql'),
-      join(phaseOneMigrations, '0000_phase_zero.sql'),
+      join(phaseTwoMigrations, '0000_phase_zero.sql'),
     );
     copyFileSync(
       join(defaultMigrationsFolder, '0001_phase_one_interviews.sql'),
-      join(phaseOneMigrations, '0001_phase_one_interviews.sql'),
+      join(phaseTwoMigrations, '0001_phase_one_interviews.sql'),
+    );
+    copyFileSync(
+      join(defaultMigrationsFolder, '0002_phase_two_story_memory.sql'),
+      join(phaseTwoMigrations, '0002_phase_two_story_memory.sql'),
     );
     const journal = JSON.parse(
       readFileSync(join(defaultMigrationsFolder, 'meta', '_journal.json'), 'utf8'),
     ) as MigrationJournal;
     writeFileSync(
-      join(phaseOneMigrations, 'meta', '_journal.json'),
-      JSON.stringify({ ...journal, entries: journal.entries.slice(0, 2) }),
+      join(phaseTwoMigrations, 'meta', '_journal.json'),
+      JSON.stringify({ ...journal, entries: journal.entries.slice(0, 3) }),
     );
 
     const database = createDatabase(join(directory, 'upgrade.sqlite'));
     try {
-      runMigrations(database, phaseOneMigrations);
-      expect(tableExists(database, 'facts')).toBe(false);
-      expect(
-        database.client.prepare('SELECT count(*) AS count FROM __drizzle_migrations').get(),
-      ).toEqual({ count: 2 });
-
-      runMigrations(database);
-
+      runMigrations(database, phaseTwoMigrations);
       expect(tableExists(database, 'facts')).toBe(true);
-      expect(tableExists(database, 'contradictions')).toBe(true);
+      expect(tableExists(database, 'jobs')).toBe(false);
       expect(
         database.client.prepare('SELECT count(*) AS count FROM __drizzle_migrations').get(),
       ).toEqual({ count: 3 });
+
+      runMigrations(database);
+
+      expect(tableExists(database, 'jobs')).toBe(true);
+      expect(tableExists(database, 'person_candidates')).toBe(true);
+      expect(
+        database.client.prepare('SELECT count(*) AS count FROM __drizzle_migrations').get(),
+      ).toEqual({ count: 4 });
     } finally {
       database.close();
     }

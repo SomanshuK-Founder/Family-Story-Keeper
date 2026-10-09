@@ -6,6 +6,18 @@ export {
   type StartInterviewResult,
 } from './interview-service.js';
 export {
+  ExtractionWorker,
+  startExtractionWorkerLoop,
+  type ExtractionWorkerLoop,
+  type ExtractionWorkerOptions,
+  type WorkerProcessResult,
+} from './extraction-worker.js';
+export {
+  ExtractionNormalizationError,
+  normalizeExtraction,
+  type NormalizeExtractionInput,
+} from './extraction-normalizer.js';
+export {
   scoreNameMatch,
   type NameCandidate,
   type NameMatchClassification,

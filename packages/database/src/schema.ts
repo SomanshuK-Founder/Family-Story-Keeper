@@ -185,6 +185,103 @@ export const answers = sqliteTable(
   ],
 );
 
+export const jobs = sqliteTable(
+  'jobs',
+  {
+    id: text('id').primaryKey(),
+    familyId: text('family_id')
+      .notNull()
+      .references(() => families.id, { onDelete: 'cascade' }),
+    type: text('type').$type<'extract_answer'>().notNull(),
+    payload: text('payload').notNull(),
+    deduplicationKey: text('deduplication_key').notNull(),
+    status: text('status')
+      .$type<'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'>()
+      .notNull()
+      .default('queued'),
+    attemptCount: integer('attempt_count').notNull().default(0),
+    maxAttempts: integer('max_attempts').notNull(),
+    availableAt: integer('available_at', { mode: 'timestamp_ms' }).notNull(),
+    lockedAt: integer('locked_at', { mode: 'timestamp_ms' }),
+    lockedBy: text('locked_by'),
+    completedAt: integer('completed_at', { mode: 'timestamp_ms' }),
+    lastErrorCode: text('last_error_code'),
+    lastErrorMessage: text('last_error_message'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    uniqueIndex('jobs_family_id_id_unique').on(table.familyId, table.id),
+    uniqueIndex('jobs_deduplication_key_unique').on(table.deduplicationKey),
+    index('jobs_claim_idx').on(table.status, table.availableAt, table.createdAt),
+    check('jobs_type_check', sql`${table.type} = 'extract_answer'`),
+    check(
+      'jobs_status_check',
+      sql`${table.status} IN ('queued', 'running', 'succeeded', 'failed', 'cancelled')`,
+    ),
+    check('jobs_attempts_check', sql`${table.attemptCount} >= 0 AND ${table.maxAttempts} >= 1`),
+    check(
+      'jobs_lock_check',
+      sql`(${table.status} = 'running' AND ${table.lockedAt} IS NOT NULL AND ${table.lockedBy} IS NOT NULL) OR ${table.status} <> 'running'`,
+    ),
+  ],
+);
+
+export const personCandidates = sqliteTable(
+  'person_candidates',
+  {
+    id: text('id').primaryKey(),
+    familyId: text('family_id').notNull(),
+    candidatePersonId: text('candidate_person_id').notNull(),
+    answerId: text('answer_id').notNull(),
+    jobId: text('job_id').notNull(),
+    extractedName: text('extracted_name').notNull(),
+    confidence: real('confidence').notNull(),
+    status: text('status').$type<'unresolved' | 'matched' | 'dismissed'>().notNull(),
+    possibleMatchPersonId: text('possible_match_person_id'),
+    matchScore: real('match_score'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    uniqueIndex('person_candidates_family_id_id_unique').on(table.familyId, table.id),
+    uniqueIndex('person_candidates_job_person_unique').on(table.jobId, table.candidatePersonId),
+    foreignKey({
+      columns: [table.familyId, table.candidatePersonId],
+      foreignColumns: [people.familyId, people.id],
+      name: 'person_candidates_family_candidate_person_fk',
+    }).onDelete('cascade'),
+    foreignKey({
+      columns: [table.familyId, table.answerId],
+      foreignColumns: [answers.familyId, answers.id],
+      name: 'person_candidates_family_answer_fk',
+    }).onDelete('restrict'),
+    foreignKey({
+      columns: [table.familyId, table.jobId],
+      foreignColumns: [jobs.familyId, jobs.id],
+      name: 'person_candidates_family_job_fk',
+    }).onDelete('cascade'),
+    foreignKey({
+      columns: [table.familyId, table.possibleMatchPersonId],
+      foreignColumns: [people.familyId, people.id],
+      name: 'person_candidates_family_possible_match_fk',
+    }).onDelete('restrict'),
+    check('person_candidates_name_check', sql`length(trim(${table.extractedName})) > 0`),
+    check(
+      'person_candidates_confidence_check',
+      sql`${table.confidence} >= 0 AND ${table.confidence} <= 1`,
+    ),
+    check(
+      'person_candidates_match_score_check',
+      sql`${table.matchScore} IS NULL OR (${table.matchScore} >= 0 AND ${table.matchScore} <= 1)`,
+    ),
+    check(
+      'person_candidates_status_check',
+      sql`${table.status} IN ('unresolved', 'matched', 'dismissed')`,
+    ),
+  ],
+);
+
 export const facts = sqliteTable(
   'facts',
   {
@@ -295,6 +392,40 @@ export const relationships = sqliteTable(
   ],
 );
 
+export const relationshipSources = sqliteTable(
+  'relationship_sources',
+  {
+    id: text('id').primaryKey(),
+    familyId: text('family_id').notNull(),
+    relationshipId: text('relationship_id').notNull(),
+    answerId: text('answer_id').notNull(),
+    jobId: text('job_id').notNull(),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    uniqueIndex('relationship_sources_relationship_answer_unique').on(
+      table.familyId,
+      table.relationshipId,
+      table.answerId,
+    ),
+    foreignKey({
+      columns: [table.familyId, table.relationshipId],
+      foreignColumns: [relationships.familyId, relationships.id],
+      name: 'relationship_sources_family_relationship_fk',
+    }).onDelete('cascade'),
+    foreignKey({
+      columns: [table.familyId, table.answerId],
+      foreignColumns: [answers.familyId, answers.id],
+      name: 'relationship_sources_family_answer_fk',
+    }).onDelete('restrict'),
+    foreignKey({
+      columns: [table.familyId, table.jobId],
+      foreignColumns: [jobs.familyId, jobs.id],
+      name: 'relationship_sources_family_job_fk',
+    }).onDelete('cascade'),
+  ],
+);
+
 export const timelineEvents = sqliteTable(
   'timeline_events',
   {
@@ -347,6 +478,40 @@ export const timelineEvents = sqliteTable(
   ],
 );
 
+export const timelineEventSources = sqliteTable(
+  'timeline_event_sources',
+  {
+    id: text('id').primaryKey(),
+    familyId: text('family_id').notNull(),
+    timelineEventId: text('timeline_event_id').notNull(),
+    answerId: text('answer_id').notNull(),
+    jobId: text('job_id').notNull(),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    uniqueIndex('timeline_event_sources_event_answer_unique').on(
+      table.familyId,
+      table.timelineEventId,
+      table.answerId,
+    ),
+    foreignKey({
+      columns: [table.familyId, table.timelineEventId],
+      foreignColumns: [timelineEvents.familyId, timelineEvents.id],
+      name: 'timeline_event_sources_family_event_fk',
+    }).onDelete('cascade'),
+    foreignKey({
+      columns: [table.familyId, table.answerId],
+      foreignColumns: [answers.familyId, answers.id],
+      name: 'timeline_event_sources_family_answer_fk',
+    }).onDelete('restrict'),
+    foreignKey({
+      columns: [table.familyId, table.jobId],
+      foreignColumns: [jobs.familyId, jobs.id],
+      name: 'timeline_event_sources_family_job_fk',
+    }).onDelete('cascade'),
+  ],
+);
+
 export const contradictions = sqliteTable(
   'contradictions',
   {
@@ -368,6 +533,12 @@ export const contradictions = sqliteTable(
   },
   (table) => [
     uniqueIndex('contradictions_family_id_id_unique').on(table.familyId, table.id),
+    uniqueIndex('contradictions_fact_pair_unique')
+      .on(table.familyId, table.leftFactId, table.rightFactId)
+      .where(sql`${table.contradictionType} = 'fact_value'`),
+    uniqueIndex('contradictions_timeline_pair_unique')
+      .on(table.familyId, table.leftTimelineEventId, table.rightTimelineEventId)
+      .where(sql`${table.contradictionType} = 'timeline_date'`),
     index('contradictions_family_status_idx').on(table.familyId, table.status),
     foreignKey({
       columns: [table.familyId, table.leftFactId],

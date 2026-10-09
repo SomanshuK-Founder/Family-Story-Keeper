@@ -11,5 +11,9 @@
       "development": "./src/index.ts",
       "default": "./dist/index.js"
     }
+  },
+  "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "3.1136.0",
+    "@story-keeper/shared": "workspace:*"
   }
 }

@@ -4,6 +4,7 @@ import {
   createDatabase,
   demoSeedIds,
   DrizzleInterviewRepository,
+  DrizzleJobRepository,
   DrizzleStoryMemoryRepository,
   runMigrations,
   seedDemoData,
@@ -71,18 +72,55 @@ describe('InterviewService', () => {
 
   it('does not create story memory automatically when an answer is saved', () => {
     const started = service.startInterview(demoSeedIds.familyId, demoSeedIds.rosaPersonId);
-    service.saveAnswer(
+    const saved = service.saveAnswer(
       demoSeedIds.familyId,
       started.interviewId,
       started.questionId,
       'We moved sometime in the early sixties.',
     );
     const memory = new DrizzleStoryMemoryRepository(database);
+    const jobs = new DrizzleJobRepository(database);
 
     expect(memory.listFacts(demoSeedIds.familyId)).toEqual([]);
     expect(memory.listRelationships(demoSeedIds.familyId)).toEqual([]);
     expect(memory.listTimelineEvents(demoSeedIds.familyId)).toEqual([]);
     expect(memory.listContradictions(demoSeedIds.familyId)).toEqual([]);
+    const queuedJobs = jobs.listByFamily(demoSeedIds.familyId);
+    expect(queuedJobs).toHaveLength(1);
+    expect(queuedJobs[0]?.type).toBe('extract_answer');
+    expect(queuedJobs[0]?.status).toBe('queued');
+    expect(queuedJobs[0]?.payload.answerId).toBe(saved.answerId);
+  });
+
+  it('rolls back the answer if extraction job creation fails', () => {
+    const started = service.startInterview(demoSeedIds.familyId, demoSeedIds.rosaPersonId);
+    database.client.exec(`
+      CREATE TRIGGER reject_extraction_job
+      BEFORE INSERT ON jobs
+      BEGIN
+        SELECT RAISE(ABORT, 'test job failure');
+      END;
+    `);
+
+    expect(() =>
+      service.saveAnswer(
+        demoSeedIds.familyId,
+        started.interviewId,
+        started.questionId,
+        'This must roll back.',
+      ),
+    ).toThrow('test job failure');
+    expect(
+      repository.findAnswerByQuestion(
+        demoSeedIds.familyId,
+        started.interviewId,
+        started.questionId,
+      ),
+    ).toBeUndefined();
+    expect(
+      repository.findQuestion(demoSeedIds.familyId, started.interviewId, started.questionId)
+        ?.status,
+    ).toBe('asked');
   });
 
   it('returns complete after every Phase 1 question is answered', () => {

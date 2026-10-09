@@ -8,6 +8,7 @@ import {
   families,
   familyMemberships,
   interviewSessions,
+  jobs,
   people,
   questions,
 } from './schema.js';
@@ -78,7 +79,10 @@ export interface InterviewRepository {
 }
 
 export class DrizzleInterviewRepository implements InterviewRepository {
-  public constructor(private readonly database: StoryKeeperDatabase) {}
+  public constructor(
+    private readonly database: StoryKeeperDatabase,
+    private readonly extractionJobMaxAttempts = 3,
+  ) {}
 
   public familyExists(familyId: string): boolean {
     return (
@@ -291,6 +295,23 @@ export class DrizzleInterviewRepository implements InterviewRepository {
           narratorPersonId: input.narratorPersonId,
           rawText: input.rawText,
           createdAt: now,
+        })
+        .run();
+
+      transaction
+        .insert(jobs)
+        .values({
+          id: randomUUID(),
+          familyId: input.familyId,
+          type: 'extract_answer',
+          payload: JSON.stringify({ answerId: id }),
+          deduplicationKey: `extract_answer:${id}`,
+          status: 'queued',
+          attemptCount: 0,
+          maxAttempts: this.extractionJobMaxAttempts,
+          availableAt: now,
+          createdAt: now,
+          updatedAt: now,
         })
         .run();
 

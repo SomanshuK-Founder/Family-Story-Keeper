@@ -22,6 +22,13 @@
       "when": 1791498600000,
       "tag": "0002_phase_two_story_memory",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1791585000000,
+      "tag": "0003_phase_three_extraction_jobs",
+      "breakpoints": true
     }
   ]
 }

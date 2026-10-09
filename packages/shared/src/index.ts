@@ -1,5 +1,21 @@
 export { loadConfig, type AppConfig } from './config.js';
 export {
+  extractedDateMentionSchema,
+  extractedEventSchema,
+  extractedFactCandidateSchema,
+  extractedFollowUpCandidateSchema,
+  extractedPersonSchema,
+  extractedPlaceSchema,
+  extractedRelationshipSchema,
+  extractAnswerJobPayloadSchema,
+  storyExtractionJsonSchema,
+  storyExtractionSchema,
+  type StoryExtraction,
+  type ExtractAnswerJobPayload,
+  type StoryExtractionKnownPerson,
+  type StoryExtractionRequest,
+} from './extraction.js';
+export {
   approximateDateSchema,
   contradictionStatuses,
   contradictionStatusSchema,

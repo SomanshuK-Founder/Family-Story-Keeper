@@ -37,6 +37,23 @@ Fields conceptually:
 
 Ambiguous identities may exist temporarily.
 
+### `person_candidates`
+- id
+- family_id
+- candidate_person_id
+- answer_id
+- job_id
+- extracted_name
+- confidence
+- status
+- possible_match_person_id
+- match_score
+- created_at
+- updated_at
+
+Phase 3 stores an extracted unresolved name as a separate inactive person candidate. It does not
+merge the candidate into an existing person automatically.
+
 ### `family_memberships`
 - id
 - family_id
@@ -133,6 +150,16 @@ Approved facts require provenance.
 
 No silent merge from fuzzy similarity.
 
+### `relationship_sources`
+- id
+- family_id
+- relationship_id
+- answer_id
+- job_id
+- created_at
+
+AI-derived relationships retain their source answer and extraction job.
+
 ### `timeline_events`
 - id
 - family_id
@@ -154,6 +181,16 @@ Date precision:
 - unknown
 
 Do not fabricate month/day when evidence is only year-level.
+
+### `timeline_event_sources`
+- id
+- family_id
+- timeline_event_id
+- answer_id
+- job_id
+- created_at
+
+AI-derived timeline events retain their source answer and extraction job.
 
 ## Contradictions
 
@@ -261,8 +298,10 @@ Actions:
 - family_id
 - type
 - payload
+- deduplication_key
 - status
 - attempt_count
+- max_attempts
 - available_at
 - locked_at
 - locked_by

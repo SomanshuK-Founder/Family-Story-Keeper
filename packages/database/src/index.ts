@@ -9,7 +9,27 @@ export {
   type InterviewRepository,
   type QuestionRecord,
 } from './interview-repository.js';
+export {
+  DrizzleExtractionRepository,
+  ExtractionRepositoryError,
+  type ExtractionContextRecord,
+  type PersonCandidateRecord,
+  type PublishContradiction,
+  type PublishExtractionInput,
+  type PublishExtractionResult,
+  type PublishFact,
+  type PublishPersonCandidate,
+  type PublishRelationship,
+  type PublishTimelineEvent,
+} from './extraction-repository.js';
 export { defaultMigrationsFolder, runMigrations } from './migrations.js';
+export {
+  DrizzleJobRepository,
+  JobRepositoryError,
+  type ExtractionJobRecord,
+  type JobFailure,
+  type JobStatus,
+} from './job-repository.js';
 export { demoSeedIds, seedDemoData } from './seed.js';
 export {
   DrizzleStoryMemoryRepository,
