@@ -8,6 +8,7 @@ import type {
   NarratorMemoryService,
   PresentationService,
   PrivacyService,
+  SearchService,
 } from '@story-keeper/story-engine';
 
 import { createMcpRouter } from './mcp.js';
@@ -23,6 +24,7 @@ export function createApplication(
   familyQuestionService: FamilyQuestionService,
   chapterService: ChapterService,
   presentationService: PresentationService,
+  searchService: SearchService,
 ): StoryKeeperApplication {
   const app = createMcpExpressApp();
 
@@ -41,6 +43,7 @@ export function createApplication(
       familyQuestionService,
       chapterService,
       presentationService,
+      searchService,
     ),
   );
 

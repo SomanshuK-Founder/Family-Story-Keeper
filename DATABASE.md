@@ -383,15 +383,17 @@ Prefer metadata:
 Do not store raw private story text by default.
 
 ## Search
-FTS5 indexes approved family-visible content.
-
-Initial searchable material:
+`story_search` is a derived SQLite FTS5 index over approved family-visible content:
 - approved facts
-- approved timeline text
+- approved relationships whose people are confirmed and active
+- approved timeline events
 - approved chapters
-- approved source excerpts if privacy policy allows
 
-Pending/rejected material is excluded by default.
+Raw answers, source excerpts, queued questions, person candidates, unresolved contradiction claims,
+and pending/rejected memory are excluded. Approval-state triggers synchronize the index in the same
+transaction as authoritative state changes. Search also revalidates authoritative eligibility at
+read time. `pnpm search:rebuild` deterministically rebuilds the derived index from authoritative
+approved records and is safe to repeat.
 
 ## Migration Rule
 All schema changes use migrations.

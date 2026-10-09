@@ -9,6 +9,7 @@ import {
   DrizzleNarratorMemoryRepository,
   DrizzlePrivacyRepository,
   DrizzlePresentationRepository,
+  SqliteSearchRepository,
   runMigrations,
   seedDemoData,
   type StoryKeeperDatabase,
@@ -20,6 +21,7 @@ import {
   NarratorMemoryService,
   PresentationService,
   PrivacyService,
+  SearchService,
 } from '@story-keeper/story-engine';
 
 import { createApplication } from '../src/app.js';
@@ -33,6 +35,7 @@ export interface TestRuntime {
   readonly familyQuestionService: FamilyQuestionService;
   readonly chapterService: ChapterService;
   readonly presentationService: PresentationService;
+  readonly searchService: SearchService;
   readonly httpServer: Server;
   readonly mcpUrl: URL;
   close(): Promise<void>;
@@ -53,6 +56,10 @@ export async function startTestRuntime(databasePath: string): Promise<TestRuntim
     new DrizzlePrivacyRepository(database),
     new DrizzlePresentationRepository(database),
   );
+  const searchService = new SearchService(
+    new DrizzlePrivacyRepository(database),
+    new SqliteSearchRepository(database),
+  );
   const familyQuestionService = new FamilyQuestionService(
     new DrizzleFamilyQuestionRepository(database),
   );
@@ -69,6 +76,7 @@ export async function startTestRuntime(databasePath: string): Promise<TestRuntim
     familyQuestionService,
     chapterService,
     presentationService,
+    searchService,
   );
   const httpServer = await startHttpServer(app, 0);
   const address = httpServer.address() as AddressInfo;
@@ -81,6 +89,7 @@ export async function startTestRuntime(databasePath: string): Promise<TestRuntim
     familyQuestionService,
     chapterService,
     presentationService,
+    searchService,
     httpServer,
     mcpUrl: new URL(`http://127.0.0.1:${String(address.port)}/mcp`),
     close: async (): Promise<void> => {

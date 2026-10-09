@@ -95,3 +95,14 @@ export {
   type TimelineItem,
   type TimelineResponse,
 } from './presentation.js';
+export {
+  familyStorySearchResultSchema,
+  searchFamilyStoryInputSchema,
+  searchFamilyStoryOutputSchema,
+  searchSourceTypes,
+  searchSourceTypeSchema,
+  type FamilyStorySearchResult,
+  type SearchFamilyStoryInput,
+  type SearchFamilyStoryOutput,
+  type SearchSourceType,
+} from './search.js';

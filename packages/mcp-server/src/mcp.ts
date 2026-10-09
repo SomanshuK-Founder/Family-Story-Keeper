@@ -12,6 +12,7 @@ import type {
   NarratorMemoryService,
   PresentationService,
   PrivacyService,
+  SearchService,
 } from '@story-keeper/story-engine';
 
 import { assertAlexaMcpCompatibility } from './protocol.js';
@@ -42,6 +43,8 @@ import {
   resolveConflictOutputSchema,
   saveAnswerInputSchema,
   saveAnswerOutputSchema,
+  searchFamilyStoryInputSchema,
+  searchFamilyStoryOutputSchema,
   startInterviewInputSchema,
   startInterviewOutputSchema,
 } from './tool-schemas.js';
@@ -53,6 +56,7 @@ export function createStoryKeeperMcpServer(
   familyQuestionService: FamilyQuestionService,
   chapterService: ChapterService,
   presentationService: PresentationService,
+  searchService: SearchService,
 ): McpServer {
   assertAlexaMcpCompatibility();
 
@@ -230,6 +234,17 @@ export function createStoryKeeperMcpServer(
       executeTool(() => presentationService.getApprovedChapters(familyId, actorPersonId)),
   );
 
+  server.registerTool(
+    'search_family_story',
+    {
+      description: 'Search approved family-visible story memory.',
+      inputSchema: searchFamilyStoryInputSchema,
+      outputSchema: searchFamilyStoryOutputSchema,
+    },
+    ({ familyId, actorPersonId, query, limit }) =>
+      executeTool(() => searchService.searchFamilyStory(familyId, actorPersonId, query, limit)),
+  );
+
   return server;
 }
 
@@ -240,6 +255,7 @@ export function createMcpRouter(
   familyQuestionService: FamilyQuestionService,
   chapterService: ChapterService,
   presentationService: PresentationService,
+  searchService: SearchService,
 ): Router {
   const router = Router();
 
@@ -251,6 +267,7 @@ export function createMcpRouter(
       familyQuestionService,
       chapterService,
       presentationService,
+      searchService,
     );
     const transport = new StreamableHTTPServerTransport({ enableJsonResponse: true });
 

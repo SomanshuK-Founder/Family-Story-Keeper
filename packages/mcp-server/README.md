@@ -151,12 +151,43 @@ rejected drafts and raw source answers are never returned.
 }
 ```
 
+### `search_family_story`
+
+Input: `familyId`, `actorPersonId`, `query`, with optional `limit` (default 10, maximum 25).
+
+Searches approved family-visible facts, resolved-identity relationships, timeline events, and
+chapters through SQLite FTS5. The query is treated as natural-language terms rather than raw FTS
+syntax. Results never contain raw answers, pending memory, private drafts, unresolved conflicts,
+queued questions, or person candidates.
+
+```json
+{
+  "results": [
+    {
+      "sourceType": "timeline_event",
+      "sourceId": "a6cc9724-a0a7-4c07-91e7-bf4694587d98",
+      "title": "Moved to Delhi",
+      "snippet": "move Moved to Delhi The family moved to Delhi.",
+      "personId": "be9e1b1b-4132-4ed0-a2a0-6fb89fc0dd86",
+      "personDisplayName": "Rosa",
+      "date": {
+        "earliestYear": 1962,
+        "latestYear": 1964,
+        "precision": "approximate"
+      },
+      "rank": -0.8
+    }
+  ]
+}
+```
+
 ## Frontend contract boundary
 
 The exact presentation schemas and TypeScript types live in
-`packages/shared/src/presentation.ts`. The three Phase 8 reads are approved-only for narrators,
+`packages/shared/src/presentation.ts`; the Phase 9 search contract lives in
+`packages/shared/src/search.ts`. The presentation reads and search are approved-only for narrators,
 relatives, and children; narrator-private review continues through `get_story_context` and
-`review_chapter`. All 14 MCP tool names and their existing required fields are frozen. Coordinate
+`review_chapter`. All 15 MCP tool names and their existing required fields are frozen. Coordinate
 breaking changes with Person B and prefer additive optional fields.
 
 ## Local demo seed

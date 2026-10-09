@@ -20,7 +20,8 @@ export type StoryKeeperErrorCode =
   | 'CHAPTER_ACTOR_NOT_AUTHORIZED'
   | 'CHAPTER_NOT_FOUND'
   | 'CHAPTER_SOURCE_NOT_ELIGIBLE'
-  | 'CHAPTER_STATE_CONFLICT';
+  | 'CHAPTER_STATE_CONFLICT'
+  | 'SEARCH_QUERY_INVALID';
 
 export class StoryKeeperError extends Error {
   public constructor(

@@ -1,4 +1,5 @@
 export { StoryKeeperError, type StoryKeeperErrorCode } from './errors.js';
+export { SearchService, normalizeSearchQuery } from './search-service.js';
 export {
   ChapterService,
   type RequestChapterDraftResult,

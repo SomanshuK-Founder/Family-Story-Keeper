@@ -60,12 +60,18 @@ describe('database foundation', () => {
         'queued_questions',
         'relationship_sources',
         'relationships',
+        'story_search',
+        'story_search_config',
+        'story_search_content',
+        'story_search_data',
+        'story_search_docsize',
+        'story_search_idx',
         'timeline_event_sources',
         'timeline_events',
       ]);
       expect(
         database.client.prepare('SELECT count(*) AS count FROM __drizzle_migrations').get(),
-      ).toEqual({ count: 8 });
+      ).toEqual({ count: 9 });
     } finally {
       database.close();
     }
@@ -111,7 +117,7 @@ describe('database foundation', () => {
       expect(tableExists(database, 'person_candidates')).toBe(true);
       expect(
         database.client.prepare('SELECT count(*) AS count FROM __drizzle_migrations').get(),
-      ).toEqual({ count: 8 });
+      ).toEqual({ count: 9 });
     } finally {
       database.close();
     }
@@ -188,7 +194,7 @@ describe('database foundation', () => {
       ).toEqual({ name: 'resolved_by_person_id' });
       expect(
         database.client.prepare('SELECT count(*) AS count FROM __drizzle_migrations').get(),
-      ).toEqual({ count: 8 });
+      ).toEqual({ count: 9 });
     } finally {
       database.close();
     }
@@ -237,7 +243,7 @@ describe('database foundation', () => {
       expect(database.client.pragma('foreign_key_check')).toEqual([]);
       expect(
         database.client.prepare('SELECT count(*) AS count FROM __drizzle_migrations').get(),
-      ).toEqual({ count: 8 });
+      ).toEqual({ count: 9 });
     } finally {
       database.close();
     }
@@ -295,7 +301,7 @@ describe('database foundation', () => {
       expect(database.client.pragma('foreign_key_check')).toEqual([]);
       expect(
         database.client.prepare('SELECT count(*) AS count FROM __drizzle_migrations').get(),
-      ).toEqual({ count: 8 });
+      ).toEqual({ count: 9 });
     } finally {
       database.close();
     }
@@ -438,7 +444,64 @@ describe('database foundation', () => {
       expect(database.client.pragma('foreign_key_check')).toEqual([]);
       expect(
         database.client.prepare('SELECT count(*) AS count FROM __drizzle_migrations').get(),
-      ).toEqual({ count: 8 });
+      ).toEqual({ count: 9 });
+    } finally {
+      database.close();
+    }
+  });
+
+  it('migrates Phase 8 data forward and backfills approved memory into FTS5', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'story-keeper-phase-nine-upgrade-'));
+    temporaryDirectories.push(directory);
+    const phaseEightMigrations = join(directory, 'phase-eight-migrations');
+    mkdirSync(join(phaseEightMigrations, 'meta'), { recursive: true });
+    for (const migration of [
+      '0000_phase_zero.sql',
+      '0001_phase_one_interviews.sql',
+      '0002_phase_two_story_memory.sql',
+      '0003_phase_three_extraction_jobs.sql',
+      '0004_phase_four_conflict_resolution.sql',
+      '0005_phase_five_approval_privacy.sql',
+      '0006_phase_six_family_questions.sql',
+      '0007_phase_seven_chapters.sql',
+    ]) {
+      copyFileSync(join(defaultMigrationsFolder, migration), join(phaseEightMigrations, migration));
+    }
+    const journal = JSON.parse(
+      readFileSync(join(defaultMigrationsFolder, 'meta', '_journal.json'), 'utf8'),
+    ) as MigrationJournal;
+    writeFileSync(
+      join(phaseEightMigrations, 'meta', '_journal.json'),
+      JSON.stringify({ ...journal, entries: journal.entries.slice(0, 8) }),
+    );
+
+    const database = createDatabase(join(directory, 'phase-eight.sqlite'));
+    try {
+      runMigrations(database, phaseEightMigrations);
+      seedDemoData(database);
+      const factId = '80000000-0000-4000-8000-000000000001';
+      const now = Date.now();
+      database.client
+        .prepare(
+          `INSERT INTO facts
+        (id, family_id, subject_person_id, fact_type, normalized_value, confidence, approval_status, created_at, updated_at)
+        VALUES (?, ?, ?, 'childhood_home', 'A house beside the orchard', 1, 'approved', ?, ?)`,
+        )
+        .run(factId, demoSeedIds.familyId, demoSeedIds.rosaPersonId, now, now);
+      expect(tableExists(database, 'story_search')).toBe(false);
+
+      runMigrations(database);
+
+      expect(tableExists(database, 'story_search')).toBe(true);
+      expect(
+        database.client
+          .prepare("SELECT source_id FROM story_search WHERE story_search MATCH 'orchard'")
+          .all(),
+      ).toEqual([{ source_id: factId }]);
+      expect(database.client.pragma('foreign_key_check')).toEqual([]);
+      expect(
+        database.client.prepare('SELECT count(*) AS count FROM __drizzle_migrations').get(),
+      ).toEqual({ count: 9 });
     } finally {
       database.close();
     }

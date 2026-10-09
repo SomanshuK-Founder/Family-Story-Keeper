@@ -29,6 +29,7 @@ import {
   reviewChapterOutputSchema,
   resolveConflictOutputSchema,
   saveAnswerOutputSchema,
+  searchFamilyStoryOutputSchema,
   startInterviewOutputSchema,
 } from '../src/tool-schemas.js';
 import { startTestRuntime, type TestRuntime } from './runtime.js';
@@ -51,7 +52,7 @@ afterEach(async () => {
 });
 
 describe('MCP Streamable HTTP integration', () => {
-  it('negotiates 2025-11-25 and exposes exactly the Phase 8 tools', async () => {
+  it('negotiates 2025-11-25 and exposes exactly the Phase 9 tools', async () => {
     const runtime = await createRuntime(':memory:');
     const { client, transport } = await connectClient(runtime.mcpUrl);
 
@@ -74,6 +75,7 @@ describe('MCP Streamable HTTP integration', () => {
       'resolve_conflict',
       'review_chapter',
       'save_answer',
+      'search_family_story',
       'start_interview',
     ]);
   });
@@ -236,6 +238,35 @@ describe('MCP Streamable HTTP integration', () => {
         action: 'approve',
       },
     });
+    const searchResult = searchFamilyStoryOutputSchema.parse(
+      (
+        await client.callTool({
+          name: 'search_family_story',
+          arguments: {
+            familyId: demoSeedIds.familyId,
+            actorPersonId: mayaId,
+            query: 'banyan tree',
+          },
+        })
+      ).structuredContent,
+    );
+    expect(searchResult.results).toEqual([
+      expect.objectContaining({ sourceType: 'fact', sourceId: secondChapterSource.id }),
+    ]);
+    expect(
+      searchFamilyStoryOutputSchema.parse(
+        (
+          await client.callTool({
+            name: 'search_family_story',
+            arguments: {
+              familyId: demoSeedIds.familyId,
+              actorPersonId: mayaId,
+              query: '" OR * NEAR(',
+            },
+          })
+        ).structuredContent,
+      ),
+    ).toEqual({ results: [] });
     const chapterRequest = requestChapterDraftOutputSchema.parse(
       (
         await client.callTool({
@@ -376,6 +407,26 @@ describe('MCP Streamable HTTP integration', () => {
       arguments: { familyId: randomUUID(), actorPersonId: mayaId },
     });
     expect(crossFamilyPresentation.isError).toBe(true);
+
+    const emptySearch = await client.callTool({
+      name: 'search_family_story',
+      arguments: {
+        familyId: demoSeedIds.familyId,
+        actorPersonId: mayaId,
+        query: '   ',
+      },
+    });
+    expect(emptySearch.isError).toBe(true);
+
+    const crossFamilySearch = await client.callTool({
+      name: 'search_family_story',
+      arguments: {
+        familyId: randomUUID(),
+        actorPersonId: mayaId,
+        query: 'banyan',
+      },
+    });
+    expect(crossFamilySearch.isError).toBe(true);
 
     const invalidChapterRequest = await client.callTool({
       name: 'request_chapter_draft',
@@ -547,6 +598,14 @@ describe('MCP Streamable HTTP integration', () => {
           arguments: { familyId: demoSeedIds.familyId, actorPersonId: mayaId },
         });
       }
+      await client.callTool({
+        name: 'search_family_story',
+        arguments: {
+          familyId: demoSeedIds.familyId,
+          actorPersonId: mayaId,
+          query: privateText,
+        },
+      });
 
       const captured = [...log.mock.calls, ...error.mock.calls].flat().join(' ');
       expect(captured).not.toContain(privateText);

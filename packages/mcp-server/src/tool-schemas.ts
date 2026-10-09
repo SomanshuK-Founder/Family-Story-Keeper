@@ -9,6 +9,8 @@ import {
   familyGraphResponseSchema,
   presentationReadInputSchema,
   relationshipTypeSchema,
+  searchFamilyStoryInputSchema,
+  searchFamilyStoryOutputSchema,
   storyItemTargetTypeSchema,
   timelineResponseSchema,
 } from '@story-keeper/shared';
@@ -265,3 +267,5 @@ export const getFamilyGraphOutputSchema = familyGraphResponseSchema;
 
 export const getApprovedChaptersInputSchema = presentationReadInputSchema;
 export const getApprovedChaptersOutputSchema = approvedChaptersResponseSchema;
+
+export { searchFamilyStoryInputSchema, searchFamilyStoryOutputSchema };

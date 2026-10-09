@@ -81,6 +81,11 @@ export {
   type PresentationTimelineRecord,
 } from './presentation-repository.js';
 export {
+  SqliteSearchRepository,
+  type SearchDocumentRecord,
+  type SearchRepository,
+} from './search-repository.js';
+export {
   DrizzleNarratorMemoryRepository,
   NarratorMemoryRepositoryError,
   type ConflictClaimRecord,

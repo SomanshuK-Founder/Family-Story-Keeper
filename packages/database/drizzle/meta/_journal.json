@@ -57,6 +57,13 @@
       "when": 1791851400000,
       "tag": "0007_phase_seven_chapters",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1791937800000,
+      "tag": "0008_phase_nine_search",
+      "breakpoints": true
     }
   ]
 }

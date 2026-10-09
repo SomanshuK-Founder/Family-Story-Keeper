@@ -15,6 +15,7 @@ import {
   DrizzlePrivacyRepository,
   DrizzlePresentationRepository,
   DrizzleStoryMemoryRepository,
+  SqliteSearchRepository,
   runMigrations,
 } from '@story-keeper/database';
 import { loadConfig } from '@story-keeper/shared';
@@ -27,6 +28,7 @@ import {
   NarratorMemoryService,
   PresentationService,
   PrivacyService,
+  SearchService,
   startChapterWorkerLoop,
   startExtractionWorkerLoop,
   type ChapterWorkerLoop,
@@ -50,6 +52,10 @@ const presentationService = new PresentationService(
   new DrizzlePrivacyRepository(database),
   new DrizzlePresentationRepository(database),
 );
+const searchService = new SearchService(
+  new DrizzlePrivacyRepository(database),
+  new SqliteSearchRepository(database),
+);
 const familyQuestionService = new FamilyQuestionService(
   new DrizzleFamilyQuestionRepository(database),
 );
@@ -67,6 +73,7 @@ const { app } = createApplication(
   familyQuestionService,
   chapterService,
   presentationService,
+  searchService,
 );
 
 let workerLoop: ExtractionWorkerLoop | undefined;

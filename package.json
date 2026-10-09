@@ -16,6 +16,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint . --max-warnings 0",
+    "search:rebuild": "node --conditions=development --env-file-if-exists=.env --import tsx packages/database/src/search-rebuild-cli.ts",
     "test": "vitest run",
     "typecheck": "tsc -b --pretty false && tsc -p tsconfig.tests.json --pretty false"
   },
