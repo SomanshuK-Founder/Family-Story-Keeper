@@ -16,7 +16,11 @@ export {
   type StoryExtractionRequest,
 } from './extraction.js';
 export {
+  approvalActions,
+  approvalActionSchema,
   approximateDateSchema,
+  consentEventTypes,
+  consentEventTypeSchema,
   contradictionStatuses,
   contradictionStatusSchema,
   contradictionResolutionTypes,
@@ -29,11 +33,16 @@ export {
   relationshipTypeSchema,
   storyItemStatuses,
   storyItemStatusSchema,
+  storyItemTargetTypes,
+  storyItemTargetTypeSchema,
+  type ApprovalAction,
   type ApproximateDate,
+  type ConsentEventType,
   type ContradictionStatus,
   type ContradictionResolutionType,
   type ContradictionType,
   type DatePrecision,
   type RelationshipType,
   type StoryItemStatus,
+  type StoryItemTargetType,
 } from './story-memory.js';

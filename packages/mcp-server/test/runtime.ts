@@ -5,11 +5,16 @@ import {
   createDatabase,
   DrizzleInterviewRepository,
   DrizzleNarratorMemoryRepository,
+  DrizzlePrivacyRepository,
   runMigrations,
   seedDemoData,
   type StoryKeeperDatabase,
 } from '@story-keeper/database';
-import { InterviewService, NarratorMemoryService } from '@story-keeper/story-engine';
+import {
+  InterviewService,
+  NarratorMemoryService,
+  PrivacyService,
+} from '@story-keeper/story-engine';
 
 import { createApplication } from '../src/app.js';
 import { startHttpServer } from '../src/server.js';
@@ -18,6 +23,7 @@ export interface TestRuntime {
   readonly database: StoryKeeperDatabase;
   readonly repository: DrizzleInterviewRepository;
   readonly narratorMemoryService: NarratorMemoryService;
+  readonly privacyService: PrivacyService;
   readonly httpServer: Server;
   readonly mcpUrl: URL;
   close(): Promise<void>;
@@ -28,12 +34,14 @@ export async function startTestRuntime(databasePath: string): Promise<TestRuntim
   runMigrations(database);
   seedDemoData(database);
   const repository = new DrizzleInterviewRepository(database);
-  const narratorMemoryService = new NarratorMemoryService(
-    repository,
-    new DrizzleNarratorMemoryRepository(database),
+  const narratorMemoryRepository = new DrizzleNarratorMemoryRepository(database);
+  const narratorMemoryService = new NarratorMemoryService(repository, narratorMemoryRepository);
+  const privacyService = new PrivacyService(
+    new DrizzlePrivacyRepository(database),
+    narratorMemoryRepository,
   );
   const interviewService = new InterviewService(repository, narratorMemoryService);
-  const { app } = createApplication(interviewService, narratorMemoryService);
+  const { app } = createApplication(interviewService, narratorMemoryService, privacyService);
   const httpServer = await startHttpServer(app, 0);
   const address = httpServer.address() as AddressInfo;
 
@@ -41,6 +49,7 @@ export async function startTestRuntime(databasePath: string): Promise<TestRuntim
     database,
     repository,
     narratorMemoryService,
+    privacyService,
     httpServer,
     mcpUrl: new URL(`http://127.0.0.1:${String(address.port)}/mcp`),
     close: async (): Promise<void> => {

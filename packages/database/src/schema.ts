@@ -11,12 +11,15 @@ import {
 } from 'drizzle-orm/sqlite-core';
 
 import type {
+  ApprovalAction,
+  ConsentEventType,
   ContradictionResolutionType,
   ContradictionStatus,
   ContradictionType,
   DatePrecision,
   RelationshipType,
   StoryItemStatus,
+  StoryItemTargetType,
 } from '@story-keeper/shared';
 
 const createdAt = () =>
@@ -626,6 +629,72 @@ export const contradictions = sqliteTable(
         AND ${table.resolvedByPersonId} IS NOT NULL
         AND ${table.resolvedAt} IS NOT NULL
       )`,
+    ),
+  ],
+);
+
+export const approvals = sqliteTable(
+  'approvals',
+  {
+    id: text('id').primaryKey(),
+    familyId: text('family_id')
+      .notNull()
+      .references(() => families.id, { onDelete: 'cascade' }),
+    actorPersonId: text('actor_person_id').notNull(),
+    targetType: text('target_type').$type<StoryItemTargetType>().notNull(),
+    targetId: text('target_id').notNull(),
+    action: text('action').$type<ApprovalAction>().notNull(),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    index('approvals_family_target_idx').on(table.familyId, table.targetType, table.targetId),
+    foreignKey({
+      columns: [table.familyId, table.actorPersonId],
+      foreignColumns: [people.familyId, people.id],
+      name: 'approvals_family_actor_fk',
+    }).onDelete('restrict'),
+    check(
+      'approvals_target_type_check',
+      sql`${table.targetType} IN ('fact', 'relationship', 'timeline_event')`,
+    ),
+    check('approvals_action_check', sql`${table.action} IN ('approve', 'reject', 'revoke')`),
+  ],
+);
+
+export const consentEvents = sqliteTable(
+  'consent_events',
+  {
+    id: text('id').primaryKey(),
+    familyId: text('family_id')
+      .notNull()
+      .references(() => families.id, { onDelete: 'cascade' }),
+    personId: text('person_id').notNull(),
+    eventType: text('event_type').$type<ConsentEventType>().notNull(),
+    targetType: text('target_type').$type<StoryItemTargetType>().notNull(),
+    targetId: text('target_id').notNull(),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    uniqueIndex('consent_events_person_event_target_unique').on(
+      table.familyId,
+      table.personId,
+      table.eventType,
+      table.targetType,
+      table.targetId,
+    ),
+    index('consent_events_family_target_idx').on(table.familyId, table.targetType, table.targetId),
+    foreignKey({
+      columns: [table.familyId, table.personId],
+      foreignColumns: [people.familyId, people.id],
+      name: 'consent_events_family_person_fk',
+    }).onDelete('restrict'),
+    check(
+      'consent_events_type_check',
+      sql`${table.eventType} IN ('story_item_approved', 'story_item_rejected', 'story_item_revoked', 'pending_memory_deleted')`,
+    ),
+    check(
+      'consent_events_target_type_check',
+      sql`${table.targetType} IN ('fact', 'relationship', 'timeline_event')`,
     ),
   ],
 );

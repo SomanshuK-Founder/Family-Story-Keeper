@@ -1,6 +1,12 @@
 import { z } from 'zod';
 
-import { approximateDateSchema, contradictionResolutionTypeSchema } from '@story-keeper/shared';
+import {
+  approvalActionSchema,
+  approximateDateSchema,
+  contradictionResolutionTypeSchema,
+  relationshipTypeSchema,
+  storyItemTargetTypeSchema,
+} from '@story-keeper/shared';
 
 const opaqueId = z.uuid();
 
@@ -98,4 +104,91 @@ export const resolveConflictOutputSchema = z.object({
   resolutionType: contradictionResolutionTypeSchema,
   resolvedByPersonId: opaqueId,
   resolvedAt: z.iso.datetime(),
+});
+
+export const getStoryContextInputSchema = z.object({
+  familyId: opaqueId,
+  actorPersonId: opaqueId,
+});
+
+const contextStatusSchema = z.enum(['pending', 'approved']);
+
+export const getStoryContextOutputSchema = z.object({
+  actor: z.object({
+    id: opaqueId,
+    displayName: z.string(),
+    role: z.enum(['narrator', 'relative', 'child']),
+  }),
+  visibility: z.enum(['narrator_review', 'approved_family']),
+  facts: z.array(
+    z.object({
+      id: opaqueId,
+      subjectPersonId: opaqueId,
+      factType: z.string(),
+      value: z.string(),
+      confidence: z.number().min(0).max(1),
+      status: contextStatusSchema,
+      sourceCount: z.number().int().nonnegative(),
+    }),
+  ),
+  relationships: z.array(
+    z.object({
+      id: opaqueId,
+      fromPersonId: opaqueId,
+      toPersonId: opaqueId,
+      relationshipType: relationshipTypeSchema,
+      confidence: z.number().min(0).max(1),
+      status: contextStatusSchema,
+      sourceCount: z.number().int().nonnegative(),
+    }),
+  ),
+  timelineEvents: z.array(
+    z.object({
+      id: opaqueId,
+      subjectPersonId: opaqueId,
+      eventType: z.string(),
+      title: z.string(),
+      description: z.string(),
+      date: approximateDateSchema,
+      status: contextStatusSchema,
+      sourceCount: z.number().int().nonnegative(),
+    }),
+  ),
+  conflicts: z.array(
+    z.object({
+      contradictionId: opaqueId,
+      contradictionType: z.enum(['fact_value', 'timeline_date']),
+      status: z.literal('unresolved'),
+    }),
+  ),
+});
+
+export const approveStoryItemInputSchema = z.object({
+  familyId: opaqueId,
+  actorPersonId: opaqueId,
+  targetType: storyItemTargetTypeSchema,
+  targetId: opaqueId,
+  action: approvalActionSchema,
+});
+
+export const approveStoryItemOutputSchema = z.object({
+  targetType: storyItemTargetTypeSchema,
+  targetId: opaqueId,
+  action: approvalActionSchema,
+  status: z.enum(['updated', 'already_applied']),
+  itemStatus: z.enum(['approved', 'rejected']),
+});
+
+export const deletePendingMemoryInputSchema = z.object({
+  familyId: opaqueId,
+  actorPersonId: opaqueId,
+  targetType: storyItemTargetTypeSchema,
+  targetId: opaqueId,
+});
+
+export const deletePendingMemoryOutputSchema = z.object({
+  targetType: storyItemTargetTypeSchema,
+  targetId: opaqueId,
+  status: z.enum(['deleted', 'already_deleted']),
+  itemStatus: z.literal('rejected'),
 });

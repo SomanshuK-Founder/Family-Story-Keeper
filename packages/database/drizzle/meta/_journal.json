@@ -36,6 +36,13 @@
       "when": 1791592200000,
       "tag": "0004_phase_four_conflict_resolution",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1791678600000,
+      "tag": "0005_phase_five_approval_privacy",
+      "breakpoints": true
     }
   ]
 }

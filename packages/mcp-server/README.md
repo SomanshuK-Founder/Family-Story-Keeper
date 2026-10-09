@@ -41,6 +41,26 @@ Input: `familyId`, `interviewId`, `contradictionId`, `resolutionType`.
 Records `keep_left`, `keep_right`, `different_events`, or `dismiss_not_a_conflict` with resolver and
 timestamp metadata. Resolution preserves source answers and does not approve the surviving claim.
 
+### `get_story_context`
+
+Input: `familyId`, `actorPersonId`.
+
+Returns narrator-review context for narrators and approved family-visible context for relatives and
+children. It does not return raw answers.
+
+### `approve_story_item`
+
+Input: `familyId`, `actorPersonId`, `targetType`, `targetId`, `action`.
+
+Applies an explicit, provenance-checked `approve`, `reject`, or `revoke` transition to an eligible
+fact, relationship, or timeline event.
+
+### `delete_pending_memory`
+
+Input: `familyId`, `actorPersonId`, `targetType`, `targetId`.
+
+Invalidates eligible pending derived memory while preserving source evidence and audit metadata.
+
 ## Local demo seed
 
 Run `pnpm db:seed` to create the fictional `Story Keeper Demo Family` and narrator `Rosa`. The

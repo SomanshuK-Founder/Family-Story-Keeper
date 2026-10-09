@@ -43,6 +43,8 @@ describe('database foundation', () => {
       expect(tables).toEqual([
         '__drizzle_migrations',
         'answers',
+        'approvals',
+        'consent_events',
         'contradictions',
         'fact_sources',
         'facts',
@@ -60,7 +62,7 @@ describe('database foundation', () => {
       ]);
       expect(
         database.client.prepare('SELECT count(*) AS count FROM __drizzle_migrations').get(),
-      ).toEqual({ count: 5 });
+      ).toEqual({ count: 6 });
     } finally {
       database.close();
     }
@@ -106,13 +108,13 @@ describe('database foundation', () => {
       expect(tableExists(database, 'person_candidates')).toBe(true);
       expect(
         database.client.prepare('SELECT count(*) AS count FROM __drizzle_migrations').get(),
-      ).toEqual({ count: 5 });
+      ).toEqual({ count: 6 });
     } finally {
       database.close();
     }
   });
 
-  it('migrates a populated Phase 3 database forward to Phase 4', () => {
+  it('migrates a populated Phase 3 database forward through Phase 5', () => {
     const directory = mkdtempSync(join(tmpdir(), 'story-keeper-phase-four-upgrade-'));
     temporaryDirectories.push(directory);
     const phaseThreeMigrations = join(directory, 'phase-three-migrations');
@@ -183,7 +185,56 @@ describe('database foundation', () => {
       ).toEqual({ name: 'resolved_by_person_id' });
       expect(
         database.client.prepare('SELECT count(*) AS count FROM __drizzle_migrations').get(),
+      ).toEqual({ count: 6 });
+    } finally {
+      database.close();
+    }
+  });
+
+  it('migrates an existing Phase 4 database forward to Phase 5', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'story-keeper-phase-five-upgrade-'));
+    temporaryDirectories.push(directory);
+    const phaseFourMigrations = join(directory, 'phase-four-migrations');
+    mkdirSync(join(phaseFourMigrations, 'meta'), { recursive: true });
+    for (const migration of [
+      '0000_phase_zero.sql',
+      '0001_phase_one_interviews.sql',
+      '0002_phase_two_story_memory.sql',
+      '0003_phase_three_extraction_jobs.sql',
+      '0004_phase_four_conflict_resolution.sql',
+    ]) {
+      copyFileSync(join(defaultMigrationsFolder, migration), join(phaseFourMigrations, migration));
+    }
+    const journal = JSON.parse(
+      readFileSync(join(defaultMigrationsFolder, 'meta', '_journal.json'), 'utf8'),
+    ) as MigrationJournal;
+    writeFileSync(
+      join(phaseFourMigrations, 'meta', '_journal.json'),
+      JSON.stringify({ ...journal, entries: journal.entries.slice(0, 5) }),
+    );
+
+    const database = createDatabase(join(directory, 'phase-four.sqlite'));
+    try {
+      runMigrations(database, phaseFourMigrations);
+      seedDemoData(database);
+      expect(tableExists(database, 'approvals')).toBe(false);
+      expect(
+        database.client.prepare('SELECT count(*) AS count FROM __drizzle_migrations').get(),
       ).toEqual({ count: 5 });
+
+      runMigrations(database);
+
+      expect(tableExists(database, 'approvals')).toBe(true);
+      expect(tableExists(database, 'consent_events')).toBe(true);
+      expect(
+        database.client
+          .prepare('SELECT canonical_display_name FROM people WHERE id = ?')
+          .get(demoSeedIds.rosaPersonId),
+      ).toEqual({ canonical_display_name: 'Rosa' });
+      expect(database.client.pragma('foreign_key_check')).toEqual([]);
+      expect(
+        database.client.prepare('SELECT count(*) AS count FROM __drizzle_migrations').get(),
+      ).toEqual({ count: 6 });
     } finally {
       database.close();
     }

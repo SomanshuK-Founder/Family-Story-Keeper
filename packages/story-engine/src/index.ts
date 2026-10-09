@@ -1,5 +1,12 @@
 export { StoryKeeperError, type StoryKeeperErrorCode } from './errors.js';
 export {
+  PrivacyService,
+  type ApproveStoryItemResult,
+  type DeletePendingMemoryResult,
+  type GetStoryContextResult,
+  type StoryContextConflict,
+} from './privacy-service.js';
+export {
   InterviewService,
   type GetNextQuestionResult,
   type SaveAnswerResult,

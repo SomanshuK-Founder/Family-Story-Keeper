@@ -5,12 +5,22 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { Router, type Response } from 'express';
 
 import { StoryKeeperError } from '@story-keeper/story-engine';
-import type { InterviewService, NarratorMemoryService } from '@story-keeper/story-engine';
+import type {
+  InterviewService,
+  NarratorMemoryService,
+  PrivacyService,
+} from '@story-keeper/story-engine';
 
 import { assertAlexaMcpCompatibility } from './protocol.js';
 import {
+  approveStoryItemInputSchema,
+  approveStoryItemOutputSchema,
+  deletePendingMemoryInputSchema,
+  deletePendingMemoryOutputSchema,
   getNextQuestionInputSchema,
   getNextQuestionOutputSchema,
+  getStoryContextInputSchema,
+  getStoryContextOutputSchema,
   listPendingConflictsInputSchema,
   listPendingConflictsOutputSchema,
   resolveConflictInputSchema,
@@ -24,6 +34,7 @@ import {
 export function createStoryKeeperMcpServer(
   interviewService: InterviewService,
   narratorMemoryService: NarratorMemoryService,
+  privacyService: PrivacyService,
 ): McpServer {
   assertAlexaMcpCompatibility();
 
@@ -94,17 +105,59 @@ export function createStoryKeeperMcpServer(
       ),
   );
 
+  server.registerTool(
+    'get_story_context',
+    {
+      description: 'Return story memory visible to an active family member.',
+      inputSchema: getStoryContextInputSchema,
+      outputSchema: getStoryContextOutputSchema,
+    },
+    ({ familyId, actorPersonId }) =>
+      executeTool(() => privacyService.getStoryContext(familyId, actorPersonId)),
+  );
+
+  server.registerTool(
+    'approve_story_item',
+    {
+      description: 'Approve, reject, or revoke an eligible narrator story item.',
+      inputSchema: approveStoryItemInputSchema,
+      outputSchema: approveStoryItemOutputSchema,
+    },
+    ({ familyId, actorPersonId, targetType, targetId, action }) =>
+      executeTool(() =>
+        privacyService.approveStoryItem(familyId, actorPersonId, targetType, targetId, action),
+      ),
+  );
+
+  server.registerTool(
+    'delete_pending_memory',
+    {
+      description: 'Invalidate an eligible pending derived-memory item.',
+      inputSchema: deletePendingMemoryInputSchema,
+      outputSchema: deletePendingMemoryOutputSchema,
+    },
+    ({ familyId, actorPersonId, targetType, targetId }) =>
+      executeTool(() =>
+        privacyService.deletePendingMemory(familyId, actorPersonId, targetType, targetId),
+      ),
+  );
+
   return server;
 }
 
 export function createMcpRouter(
   interviewService: InterviewService,
   narratorMemoryService: NarratorMemoryService,
+  privacyService: PrivacyService,
 ): Router {
   const router = Router();
 
   router.post('/', async (request, response) => {
-    const server = createStoryKeeperMcpServer(interviewService, narratorMemoryService);
+    const server = createStoryKeeperMcpServer(
+      interviewService,
+      narratorMemoryService,
+      privacyService,
+    );
     const transport = new StreamableHTTPServerTransport({ enableJsonResponse: true });
 
     response.on('close', () => {

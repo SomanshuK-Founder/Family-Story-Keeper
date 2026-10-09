@@ -1,4 +1,4 @@
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, inArray, ne } from 'drizzle-orm';
 import type {
   ApproximateDate,
   ContradictionResolutionType,
@@ -243,6 +243,39 @@ export class DrizzleNarratorMemoryRepository implements NarratorMemoryRepository
           'The contradiction has already been resolved differently.',
         );
       }
+
+      const hasActiveClaims =
+        contradiction.contradictionType === 'fact_value'
+          ? contradiction.leftFactId !== null &&
+            contradiction.rightFactId !== null &&
+            transaction
+              .select({ id: facts.id })
+              .from(facts)
+              .where(
+                and(
+                  eq(facts.familyId, input.familyId),
+                  inArray(facts.id, [contradiction.leftFactId, contradiction.rightFactId]),
+                  ne(facts.approvalStatus, 'rejected'),
+                ),
+              )
+              .all().length === 2
+          : contradiction.leftTimelineEventId !== null &&
+            contradiction.rightTimelineEventId !== null &&
+            transaction
+              .select({ id: timelineEvents.id })
+              .from(timelineEvents)
+              .where(
+                and(
+                  eq(timelineEvents.familyId, input.familyId),
+                  inArray(timelineEvents.id, [
+                    contradiction.leftTimelineEventId,
+                    contradiction.rightTimelineEventId,
+                  ]),
+                  ne(timelineEvents.approvalStatus, 'rejected'),
+                ),
+              )
+              .all().length === 2;
+      if (!hasActiveClaims) throw contradictionNotFound();
 
       if (
         input.resolutionType === 'different_events' &&
@@ -495,6 +528,7 @@ export class DrizzleNarratorMemoryRepository implements NarratorMemoryRepository
           eq(facts.familyId, familyId),
           eq(facts.id, factId),
           eq(facts.subjectPersonId, narratorPersonId),
+          ne(facts.approvalStatus, 'rejected'),
         ),
       )
       .limit(1)
@@ -542,6 +576,7 @@ export class DrizzleNarratorMemoryRepository implements NarratorMemoryRepository
           eq(timelineEvents.familyId, familyId),
           eq(timelineEvents.id, eventId),
           eq(timelineEvents.subjectPersonId, narratorPersonId),
+          ne(timelineEvents.approvalStatus, 'rejected'),
         ),
       )
       .limit(1)

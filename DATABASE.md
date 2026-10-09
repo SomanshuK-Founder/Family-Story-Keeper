@@ -302,6 +302,11 @@ Actions:
 - reject
 - revoke
 
+Phase 5 transitions are explicit: `approve` moves pending to approved, `reject` moves pending to
+rejected, and `revoke` moves approved to rejected. Facts, relationships, and timeline events require
+valid source-answer provenance before approval. Relationship approval is blocked while either
+identity is an unresolved person candidate.
+
 ### `consent_events`
 - id
 - family_id
@@ -310,6 +315,10 @@ Actions:
 - target_type
 - target_id
 - created_at
+
+Phase 5 records story-item approval, rejection, revocation, and pending-memory deletion events.
+Pending-memory deletion is a rejected-state tombstone for derived memory; it preserves raw answers
+and provenance while removing the item from active context.
 
 ## Jobs
 

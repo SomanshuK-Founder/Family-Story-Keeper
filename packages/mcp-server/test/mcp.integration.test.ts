@@ -11,11 +11,14 @@ import {
   SUPPORTED_PROTOCOL_VERSIONS,
 } from '@modelcontextprotocol/sdk/types.js';
 import { demoSeedIds, DrizzleStoryMemoryRepository } from '@story-keeper/database';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ALEXA_MCP_PROTOCOL_VERSION } from '../src/protocol.js';
 import {
+  approveStoryItemOutputSchema,
+  deletePendingMemoryOutputSchema,
   getNextQuestionOutputSchema,
+  getStoryContextOutputSchema,
   listPendingConflictsOutputSchema,
   resolveConflictOutputSchema,
   saveAnswerOutputSchema,
@@ -41,7 +44,7 @@ afterEach(async () => {
 });
 
 describe('MCP Streamable HTTP integration', () => {
-  it('negotiates 2025-11-25 and exposes exactly the Phase 4 tools', async () => {
+  it('negotiates 2025-11-25 and exposes exactly the Phase 5 tools', async () => {
     const runtime = await createRuntime(':memory:');
     const { client, transport } = await connectClient(runtime.mcpUrl);
 
@@ -51,7 +54,10 @@ describe('MCP Streamable HTTP integration', () => {
 
     const tools = await client.listTools();
     expect(tools.tools.map(({ name }) => name).sort()).toEqual([
+      'approve_story_item',
+      'delete_pending_memory',
       'get_next_question',
+      'get_story_context',
       'list_pending_conflicts',
       'resolve_conflict',
       'save_answer',
@@ -144,6 +150,58 @@ describe('MCP Streamable HTTP integration', () => {
       resolutionType: 'keep_left',
     });
 
+    const narratorContext = getStoryContextOutputSchema.parse(
+      (
+        await client.callTool({
+          name: 'get_story_context',
+          arguments: {
+            familyId: demoSeedIds.familyId,
+            actorPersonId: demoSeedIds.rosaPersonId,
+          },
+        })
+      ).structuredContent,
+    );
+    expect(narratorContext.facts.map(({ id }) => id)).toContain(left.id);
+
+    const approved = approveStoryItemOutputSchema.parse(
+      (
+        await client.callTool({
+          name: 'approve_story_item',
+          arguments: {
+            familyId: demoSeedIds.familyId,
+            actorPersonId: demoSeedIds.rosaPersonId,
+            targetType: 'fact',
+            targetId: left.id,
+            action: 'approve',
+          },
+        })
+      ).structuredContent,
+    );
+    expect(approved).toMatchObject({ status: 'updated', itemStatus: 'approved' });
+
+    const pendingDelete = memory.createFactWithSource({
+      familyId: demoSeedIds.familyId,
+      subjectPersonId: demoSeedIds.rosaPersonId,
+      factType: 'temporary_detail',
+      normalizedValue: 'A pending detail',
+      confidence: 0.8,
+      answerId: saved.answerId,
+    }).fact;
+    const deleted = deletePendingMemoryOutputSchema.parse(
+      (
+        await client.callTool({
+          name: 'delete_pending_memory',
+          arguments: {
+            familyId: demoSeedIds.familyId,
+            actorPersonId: demoSeedIds.rosaPersonId,
+            targetType: 'fact',
+            targetId: pendingDelete.id,
+          },
+        })
+      ).structuredContent,
+    );
+    expect(deleted).toMatchObject({ status: 'deleted', itemStatus: 'rejected' });
+
     const nextResult = await client.callTool({
       name: 'get_next_question',
       arguments: {
@@ -182,6 +240,18 @@ describe('MCP Streamable HTTP integration', () => {
       },
     });
     expect(invalidResolution.isError).toBe(true);
+
+    const invalidTarget = await client.callTool({
+      name: 'approve_story_item',
+      arguments: {
+        familyId: demoSeedIds.familyId,
+        actorPersonId: demoSeedIds.rosaPersonId,
+        targetType: 'chapter',
+        targetId: left.id,
+        action: 'approve',
+      },
+    });
+    expect(invalidTarget.isError).toBe(true);
 
     const unknown = CallToolResultSchema.parse(
       await client.callTool({
@@ -289,6 +359,49 @@ describe('MCP Streamable HTTP integration', () => {
     expect(result.isError).toBe(true);
     expect(text).toContain('FAMILY_NOT_FOUND');
     expect(text).not.toMatch(/sqlite|select|insert|[A-Z]:\\/i);
+  });
+
+  it('does not write raw story text to normal structured logs', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const runtime = await createRuntime(':memory:');
+      const { client } = await connectClient(runtime.mcpUrl);
+      const started = startInterviewOutputSchema.parse(
+        (
+          await client.callTool({
+            name: 'start_interview',
+            arguments: {
+              familyId: demoSeedIds.familyId,
+              personId: demoSeedIds.rosaPersonId,
+            },
+          })
+        ).structuredContent,
+      );
+      const privateText = 'Rosa hid the blue diary under the stairs.';
+      await client.callTool({
+        name: 'save_answer',
+        arguments: {
+          familyId: demoSeedIds.familyId,
+          interviewId: started.interviewId,
+          questionId: started.questionId,
+          rawText: privateText,
+        },
+      });
+      await client.callTool({
+        name: 'get_story_context',
+        arguments: {
+          familyId: demoSeedIds.familyId,
+          actorPersonId: demoSeedIds.rosaPersonId,
+        },
+      });
+
+      const captured = [...log.mock.calls, ...error.mock.calls].flat().join(' ');
+      expect(captured).not.toContain(privateText);
+    } finally {
+      log.mockRestore();
+      error.mockRestore();
+    }
   });
 });
 

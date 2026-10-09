@@ -4,6 +4,23 @@ export const storyItemStatuses = ['pending', 'approved', 'rejected'] as const;
 export const storyItemStatusSchema = z.enum(storyItemStatuses);
 export type StoryItemStatus = z.infer<typeof storyItemStatusSchema>;
 
+export const storyItemTargetTypes = ['fact', 'relationship', 'timeline_event'] as const;
+export const storyItemTargetTypeSchema = z.enum(storyItemTargetTypes);
+export type StoryItemTargetType = z.infer<typeof storyItemTargetTypeSchema>;
+
+export const approvalActions = ['approve', 'reject', 'revoke'] as const;
+export const approvalActionSchema = z.enum(approvalActions);
+export type ApprovalAction = z.infer<typeof approvalActionSchema>;
+
+export const consentEventTypes = [
+  'story_item_approved',
+  'story_item_rejected',
+  'story_item_revoked',
+  'pending_memory_deleted',
+] as const;
+export const consentEventTypeSchema = z.enum(consentEventTypes);
+export type ConsentEventType = z.infer<typeof consentEventTypeSchema>;
+
 export const relationshipTypes = [
   'sibling',
   'spouse',

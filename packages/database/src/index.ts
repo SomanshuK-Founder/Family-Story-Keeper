@@ -32,6 +32,22 @@ export {
 } from './job-repository.js';
 export { demoSeedIds, seedDemoData } from './seed.js';
 export {
+  DrizzlePrivacyRepository,
+  PrivacyRepositoryError,
+  type ApplyApprovalInput,
+  type ApplyApprovalRecord,
+  type ContextFactRecord,
+  type ContextRelationshipRecord,
+  type ContextTimelineEventRecord,
+  type DeletePendingMemoryInput,
+  type DeletePendingMemoryRecord,
+  type FamilyRole,
+  type PrivacyActorRecord,
+  type PrivacyRepository,
+  type PrivacyRepositoryErrorCode,
+  type StoryContextRecord,
+} from './privacy-repository.js';
+export {
   DrizzleNarratorMemoryRepository,
   NarratorMemoryRepositoryError,
   type ConflictClaimRecord,

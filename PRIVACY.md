@@ -52,6 +52,10 @@ May:
 ### Child
 A limited relative role for the hackathon demo.
 
+For Phase 5, relatives and children receive approved family-visible facts, relationships, and
+timeline events only. Narrators may additionally review pending items relevant to themselves and
+their own unresolved contradictions.
+
 Do not overbuild enterprise permissions.
 
 ## Approval
@@ -73,6 +77,10 @@ Pending/recent material must have a safe delete/invalidate path.
 If an answer is deleted, derived pending records that depend only on it must not remain active.
 
 Do not fake deletion while leaving content searchable.
+
+Phase 5 deletion applies only to pending derived facts, relationships, and timeline events. It
+marks them rejected transactionally and retains their source evidence and audit metadata. Raw-answer
+deletion is deferred until all dependent jobs and derived records can be invalidated safely.
 
 ## Search Boundary
 `search_family_story` defaults to approved family-visible content only.
