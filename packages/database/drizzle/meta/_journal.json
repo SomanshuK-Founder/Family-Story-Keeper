@@ -15,6 +15,13 @@
       "when": 1791488400000,
       "tag": "0001_phase_one_interviews",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1791498600000,
+      "tag": "0002_phase_two_story_memory",
+      "breakpoints": true
     }
   ]
 }

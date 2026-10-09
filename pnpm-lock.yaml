@@ -253,6 +253,9 @@ importers:
       '@story-keeper/database':
         specifier: workspace:*
         version: link:../database
+      '@story-keeper/shared':
+        specifier: workspace:*
+        version: link:../shared
 
 packages:
 

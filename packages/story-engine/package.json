@@ -13,6 +13,7 @@
     }
   },
   "dependencies": {
-    "@story-keeper/database": "workspace:*"
+    "@story-keeper/database": "workspace:*",
+    "@story-keeper/shared": "workspace:*"
   }
 }

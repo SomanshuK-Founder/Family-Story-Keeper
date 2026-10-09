@@ -4,6 +4,7 @@ import {
   createDatabase,
   demoSeedIds,
   DrizzleInterviewRepository,
+  DrizzleStoryMemoryRepository,
   runMigrations,
   seedDemoData,
 } from '@story-keeper/database';
@@ -66,6 +67,22 @@ describe('InterviewService', () => {
       interviewId: started.interviewId,
       questionText: phaseOneQuestionBank[1]?.text,
     });
+  });
+
+  it('does not create story memory automatically when an answer is saved', () => {
+    const started = service.startInterview(demoSeedIds.familyId, demoSeedIds.rosaPersonId);
+    service.saveAnswer(
+      demoSeedIds.familyId,
+      started.interviewId,
+      started.questionId,
+      'We moved sometime in the early sixties.',
+    );
+    const memory = new DrizzleStoryMemoryRepository(database);
+
+    expect(memory.listFacts(demoSeedIds.familyId)).toEqual([]);
+    expect(memory.listRelationships(demoSeedIds.familyId)).toEqual([]);
+    expect(memory.listTimelineEvents(demoSeedIds.familyId)).toEqual([]);
+    expect(memory.listContradictions(demoSeedIds.familyId)).toEqual([]);
   });
 
   it('returns complete after every Phase 1 question is answered', () => {

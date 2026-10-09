@@ -4,10 +4,19 @@ import {
   foreignKey,
   index,
   integer,
+  real,
   sqliteTable,
   text,
   uniqueIndex,
 } from 'drizzle-orm/sqlite-core';
+
+import type {
+  ContradictionStatus,
+  ContradictionType,
+  DatePrecision,
+  RelationshipType,
+  StoryItemStatus,
+} from '@story-keeper/shared';
 
 const createdAt = () =>
   integer('created_at', { mode: 'timestamp_ms' })
@@ -151,6 +160,7 @@ export const answers = sqliteTable(
     createdAt: createdAt(),
   },
   (table) => [
+    uniqueIndex('answers_family_id_id_unique').on(table.familyId, table.id),
     uniqueIndex('answers_family_interview_question_unique').on(
       table.familyId,
       table.interviewSessionId,
@@ -172,5 +182,238 @@ export const answers = sqliteTable(
       name: 'answers_family_interview_question_fk',
     }).onDelete('restrict'),
     check('answers_raw_text_nonempty_check', sql`length(trim(${table.rawText})) > 0`),
+  ],
+);
+
+export const facts = sqliteTable(
+  'facts',
+  {
+    id: text('id').primaryKey(),
+    familyId: text('family_id')
+      .notNull()
+      .references(() => families.id, { onDelete: 'cascade' }),
+    subjectPersonId: text('subject_person_id').notNull(),
+    factType: text('fact_type').notNull(),
+    normalizedValue: text('normalized_value').notNull(),
+    confidence: real('confidence').notNull(),
+    approvalStatus: text('approval_status').$type<StoryItemStatus>().notNull().default('pending'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    uniqueIndex('facts_family_id_id_unique').on(table.familyId, table.id),
+    index('facts_family_subject_idx').on(table.familyId, table.subjectPersonId),
+    foreignKey({
+      columns: [table.familyId, table.subjectPersonId],
+      foreignColumns: [people.familyId, people.id],
+      name: 'facts_family_subject_fk',
+    }).onDelete('restrict'),
+    check('facts_type_nonempty_check', sql`length(trim(${table.factType})) > 0`),
+    check('facts_value_nonempty_check', sql`length(trim(${table.normalizedValue})) > 0`),
+    check('facts_confidence_check', sql`${table.confidence} >= 0 AND ${table.confidence} <= 1`),
+    check(
+      'facts_approval_status_check',
+      sql`${table.approvalStatus} IN ('pending', 'approved', 'rejected')`,
+    ),
+  ],
+);
+
+export const factSources = sqliteTable(
+  'fact_sources',
+  {
+    id: text('id').primaryKey(),
+    familyId: text('family_id')
+      .notNull()
+      .references(() => families.id, { onDelete: 'cascade' }),
+    factId: text('fact_id').notNull(),
+    answerId: text('answer_id').notNull(),
+    sourceLocator: text('source_excerpt_or_locator'),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    uniqueIndex('fact_sources_family_id_id_unique').on(table.familyId, table.id),
+    uniqueIndex('fact_sources_fact_answer_unique').on(table.familyId, table.factId, table.answerId),
+    index('fact_sources_family_fact_idx').on(table.familyId, table.factId),
+    foreignKey({
+      columns: [table.familyId, table.factId],
+      foreignColumns: [facts.familyId, facts.id],
+      name: 'fact_sources_family_fact_fk',
+    }).onDelete('cascade'),
+    foreignKey({
+      columns: [table.familyId, table.answerId],
+      foreignColumns: [answers.familyId, answers.id],
+      name: 'fact_sources_family_answer_fk',
+    }).onDelete('restrict'),
+  ],
+);
+
+export const relationships = sqliteTable(
+  'relationships',
+  {
+    id: text('id').primaryKey(),
+    familyId: text('family_id')
+      .notNull()
+      .references(() => families.id, { onDelete: 'cascade' }),
+    fromPersonId: text('from_person_id').notNull(),
+    toPersonId: text('to_person_id').notNull(),
+    relationshipType: text('relationship_type').$type<RelationshipType>().notNull(),
+    confidence: real('confidence').notNull(),
+    approvalStatus: text('approval_status').$type<StoryItemStatus>().notNull().default('pending'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    uniqueIndex('relationships_family_id_id_unique').on(table.familyId, table.id),
+    index('relationships_family_people_idx').on(
+      table.familyId,
+      table.fromPersonId,
+      table.toPersonId,
+    ),
+    foreignKey({
+      columns: [table.familyId, table.fromPersonId],
+      foreignColumns: [people.familyId, people.id],
+      name: 'relationships_family_from_person_fk',
+    }).onDelete('restrict'),
+    foreignKey({
+      columns: [table.familyId, table.toPersonId],
+      foreignColumns: [people.familyId, people.id],
+      name: 'relationships_family_to_person_fk',
+    }).onDelete('restrict'),
+    check('relationships_distinct_people_check', sql`${table.fromPersonId} <> ${table.toPersonId}`),
+    check(
+      'relationships_type_check',
+      sql`${table.relationshipType} IN ('sibling', 'spouse', 'parent', 'child', 'cousin', 'friend')`,
+    ),
+    check(
+      'relationships_confidence_check',
+      sql`${table.confidence} >= 0 AND ${table.confidence} <= 1`,
+    ),
+    check(
+      'relationships_approval_status_check',
+      sql`${table.approvalStatus} IN ('pending', 'approved', 'rejected')`,
+    ),
+  ],
+);
+
+export const timelineEvents = sqliteTable(
+  'timeline_events',
+  {
+    id: text('id').primaryKey(),
+    familyId: text('family_id')
+      .notNull()
+      .references(() => families.id, { onDelete: 'cascade' }),
+    subjectPersonId: text('subject_person_id').notNull(),
+    eventType: text('event_type').notNull(),
+    title: text('title').notNull(),
+    description: text('description').notNull(),
+    earliestYear: integer('earliest_year'),
+    latestYear: integer('latest_year'),
+    datePrecision: text('date_precision').$type<DatePrecision>().notNull(),
+    approvalStatus: text('approval_status').$type<StoryItemStatus>().notNull().default('pending'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    uniqueIndex('timeline_events_family_id_id_unique').on(table.familyId, table.id),
+    index('timeline_events_family_subject_idx').on(table.familyId, table.subjectPersonId),
+    foreignKey({
+      columns: [table.familyId, table.subjectPersonId],
+      foreignColumns: [people.familyId, people.id],
+      name: 'timeline_events_family_subject_fk',
+    }).onDelete('restrict'),
+    check('timeline_events_type_nonempty_check', sql`length(trim(${table.eventType})) > 0`),
+    check('timeline_events_title_nonempty_check', sql`length(trim(${table.title})) > 0`),
+    check(
+      'timeline_events_date_check',
+      sql`(
+        ${table.datePrecision} = 'unknown'
+        AND ${table.earliestYear} IS NULL
+        AND ${table.latestYear} IS NULL
+      ) OR (
+        ${table.datePrecision} = 'exact'
+        AND ${table.earliestYear} IS NOT NULL
+        AND ${table.latestYear} = ${table.earliestYear}
+      ) OR (
+        ${table.datePrecision} IN ('approximate', 'range')
+        AND ${table.earliestYear} IS NOT NULL
+        AND ${table.latestYear} IS NOT NULL
+        AND ${table.earliestYear} <= ${table.latestYear}
+      )`,
+    ),
+    check(
+      'timeline_events_approval_status_check',
+      sql`${table.approvalStatus} IN ('pending', 'approved', 'rejected')`,
+    ),
+  ],
+);
+
+export const contradictions = sqliteTable(
+  'contradictions',
+  {
+    id: text('id').primaryKey(),
+    familyId: text('family_id')
+      .notNull()
+      .references(() => families.id, { onDelete: 'cascade' }),
+    contradictionType: text('contradiction_type').$type<ContradictionType>().notNull(),
+    leftFactId: text('left_fact_id'),
+    rightFactId: text('right_fact_id'),
+    leftTimelineEventId: text('left_timeline_event_id'),
+    rightTimelineEventId: text('right_timeline_event_id'),
+    status: text('status').$type<ContradictionStatus>().notNull().default('unresolved'),
+    resolutionType: text('resolution_type'),
+    resolutionNote: text('resolution_note'),
+    resolvedAt: integer('resolved_at', { mode: 'timestamp_ms' }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    uniqueIndex('contradictions_family_id_id_unique').on(table.familyId, table.id),
+    index('contradictions_family_status_idx').on(table.familyId, table.status),
+    foreignKey({
+      columns: [table.familyId, table.leftFactId],
+      foreignColumns: [facts.familyId, facts.id],
+      name: 'contradictions_family_left_fact_fk',
+    }).onDelete('restrict'),
+    foreignKey({
+      columns: [table.familyId, table.rightFactId],
+      foreignColumns: [facts.familyId, facts.id],
+      name: 'contradictions_family_right_fact_fk',
+    }).onDelete('restrict'),
+    foreignKey({
+      columns: [table.familyId, table.leftTimelineEventId],
+      foreignColumns: [timelineEvents.familyId, timelineEvents.id],
+      name: 'contradictions_family_left_timeline_event_fk',
+    }).onDelete('restrict'),
+    foreignKey({
+      columns: [table.familyId, table.rightTimelineEventId],
+      foreignColumns: [timelineEvents.familyId, timelineEvents.id],
+      name: 'contradictions_family_right_timeline_event_fk',
+    }).onDelete('restrict'),
+    check(
+      'contradictions_type_check',
+      sql`${table.contradictionType} IN ('fact_value', 'timeline_date')`,
+    ),
+    check(
+      'contradictions_references_check',
+      sql`(
+        ${table.contradictionType} = 'fact_value'
+        AND ${table.leftFactId} IS NOT NULL
+        AND ${table.rightFactId} IS NOT NULL
+        AND ${table.leftFactId} <> ${table.rightFactId}
+        AND ${table.leftTimelineEventId} IS NULL
+        AND ${table.rightTimelineEventId} IS NULL
+      ) OR (
+        ${table.contradictionType} = 'timeline_date'
+        AND ${table.leftTimelineEventId} IS NOT NULL
+        AND ${table.rightTimelineEventId} IS NOT NULL
+        AND ${table.leftTimelineEventId} <> ${table.rightTimelineEventId}
+        AND ${table.leftFactId} IS NULL
+        AND ${table.rightFactId} IS NULL
+      )`,
+    ),
+    check(
+      'contradictions_status_check',
+      sql`${table.status} IN ('unresolved', 'resolved', 'dismissed')`,
+    ),
   ],
 );

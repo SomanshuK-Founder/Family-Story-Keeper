@@ -1,1 +1,20 @@
 export { loadConfig, type AppConfig } from './config.js';
+export {
+  approximateDateSchema,
+  contradictionStatuses,
+  contradictionStatusSchema,
+  contradictionTypes,
+  contradictionTypeSchema,
+  datePrecisions,
+  datePrecisionSchema,
+  relationshipTypes,
+  relationshipTypeSchema,
+  storyItemStatuses,
+  storyItemStatusSchema,
+  type ApproximateDate,
+  type ContradictionStatus,
+  type ContradictionType,
+  type DatePrecision,
+  type RelationshipType,
+  type StoryItemStatus,
+} from './story-memory.js';

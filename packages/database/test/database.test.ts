@@ -1,11 +1,11 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { createDatabase } from '../src/database.js';
-import { runMigrations } from '../src/migrations.js';
+import { defaultMigrationsFolder, runMigrations } from '../src/migrations.js';
 import { demoSeedIds, seedDemoData } from '../src/seed.js';
 
 const temporaryDirectories: string[] = [];
@@ -43,15 +43,61 @@ describe('database foundation', () => {
       expect(tables).toEqual([
         '__drizzle_migrations',
         'answers',
+        'contradictions',
+        'fact_sources',
+        'facts',
         'families',
         'family_memberships',
         'interview_sessions',
         'people',
         'questions',
+        'relationships',
+        'timeline_events',
       ]);
       expect(
         database.client.prepare('SELECT count(*) AS count FROM __drizzle_migrations').get(),
+      ).toEqual({ count: 3 });
+    } finally {
+      database.close();
+    }
+  });
+
+  it('migrates an existing Phase 1 database forward to Phase 2', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'story-keeper-upgrade-'));
+    temporaryDirectories.push(directory);
+    const phaseOneMigrations = join(directory, 'phase-one-migrations');
+    mkdirSync(join(phaseOneMigrations, 'meta'), { recursive: true });
+    copyFileSync(
+      join(defaultMigrationsFolder, '0000_phase_zero.sql'),
+      join(phaseOneMigrations, '0000_phase_zero.sql'),
+    );
+    copyFileSync(
+      join(defaultMigrationsFolder, '0001_phase_one_interviews.sql'),
+      join(phaseOneMigrations, '0001_phase_one_interviews.sql'),
+    );
+    const journal = JSON.parse(
+      readFileSync(join(defaultMigrationsFolder, 'meta', '_journal.json'), 'utf8'),
+    ) as MigrationJournal;
+    writeFileSync(
+      join(phaseOneMigrations, 'meta', '_journal.json'),
+      JSON.stringify({ ...journal, entries: journal.entries.slice(0, 2) }),
+    );
+
+    const database = createDatabase(join(directory, 'upgrade.sqlite'));
+    try {
+      runMigrations(database, phaseOneMigrations);
+      expect(tableExists(database, 'facts')).toBe(false);
+      expect(
+        database.client.prepare('SELECT count(*) AS count FROM __drizzle_migrations').get(),
       ).toEqual({ count: 2 });
+
+      runMigrations(database);
+
+      expect(tableExists(database, 'facts')).toBe(true);
+      expect(tableExists(database, 'contradictions')).toBe(true);
+      expect(
+        database.client.prepare('SELECT count(*) AS count FROM __drizzle_migrations').get(),
+      ).toEqual({ count: 3 });
     } finally {
       database.close();
     }
@@ -76,3 +122,17 @@ describe('database foundation', () => {
     }
   });
 });
+
+interface MigrationJournal {
+  readonly version: string;
+  readonly dialect: string;
+  readonly entries: readonly unknown[];
+}
+
+function tableExists(database: ReturnType<typeof createDatabase>, tableName: string): boolean {
+  return (
+    database.client
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
+      .get(tableName) !== undefined
+  );
+}
