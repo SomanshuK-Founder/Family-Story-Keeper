@@ -53,7 +53,7 @@ export {
   type JobStatus,
   type JobType,
 } from './job-repository.js';
-export { demoSeedIds, seedDemoData } from './seed.js';
+export { demoSeedIds, demoShowcaseSeedIds, seedDemoData, seedDemoShowcaseData } from './seed.js';
 export {
   DrizzlePrivacyRepository,
   PrivacyRepositoryError,

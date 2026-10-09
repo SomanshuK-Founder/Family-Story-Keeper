@@ -17,6 +17,8 @@
     "format:check": "prettier --check .",
     "lint": "eslint . --max-warnings 0",
     "search:rebuild": "node --conditions=development --env-file-if-exists=.env --import tsx packages/database/src/search-rebuild-cli.ts",
+    "demo:smoke": "vitest run packages/mcp-server/test/backend-journey.e2e.test.ts",
+    "test:performance": "node --conditions=development --import tsx packages/mcp-server/test/performance-smoke.ts",
     "test": "vitest run",
     "typecheck": "tsc -b --pretty false && tsc -p tsconfig.tests.json --pretty false"
   },

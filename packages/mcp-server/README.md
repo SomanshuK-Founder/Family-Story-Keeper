@@ -17,7 +17,8 @@ Returns the durable interview ID, narrator ID/display name, and current question
 
 Input: `familyId`, `interviewId`, `questionId`, `rawText`.
 
-Persists the raw text unchanged and returns `{ answerId, status: "saved" }`.
+Persists non-empty raw text unchanged up to 20,000 characters and returns
+`{ answerId, status: "saved" }`.
 
 ### `get_next_question`
 
@@ -192,5 +193,66 @@ breaking changes with Person B and prefer additive optional fields.
 
 ## Local demo seed
 
-Run `pnpm db:seed` to create the fictional `Story Keeper Demo Family` and narrator `Rosa`. The
-command prints their deterministic IDs and is safe to run repeatedly.
+Run `pnpm db:seed` to create the fictional `Story Keeper Demo Family`, narrator `Rosa`, relative
+`Maya`, and child `Arun`. The command prints their deterministic IDs and is safe to run repeatedly.
+It creates actors only; story memory still flows through the real interview, worker, approval, and
+chapter paths.
+
+## Clean-clone runbook
+
+Requirements: Node.js 24 LTS and Corepack. From the repository root:
+
+```text
+corepack enable
+pnpm install --frozen-lockfile
+Copy-Item .env.example .env
+pnpm db:migrate
+pnpm db:seed
+pnpm dev
+```
+
+The server listens on `HTTP_HOST`/`PORT` (by default `127.0.0.1:3000`), serves liveness at
+`GET /health`, and MCP at `POST /mcp`. A non-loopback `HTTP_HOST` requires an explicit
+`HTTP_ALLOWED_HOSTS` comma-separated allowlist. `HTTP_ALLOWED_ORIGINS` is optional; when configured,
+browser requests with other origins are rejected while originless MCP clients remain valid.
+
+The extraction and chapter providers default to `disabled`, so ordinary local work never contacts
+AWS. When either provider is deliberately set to `bedrock`, set `AWS_REGION` and
+`BEDROCK_MODEL_ID`; credentials come from the standard AWS provider chain. The worker is part of
+the backend process and does not require a second command. `SIGINT` and `SIGTERM` stop polling,
+await the active poll, close HTTP, and then close SQLite. A process killed during a job leaves a
+recoverable stale lock.
+
+Verified local commands:
+
+```text
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm build
+pnpm format:check
+pnpm search:rebuild
+pnpm demo:smoke
+pnpm test:performance
+```
+
+`pnpm demo:smoke` uses mock extraction and chapter providers to exercise the complete local backend
+journey and restart recovery without AWS. `pnpm test:performance` records sample count, p50, p95,
+and maximum local latency for health, MCP tool listing, interview, answer, planner, presentation,
+and search paths; it is observational and has no environment-sensitive timing assertion.
+
+## Demo recovery
+
+- **Port in use:** change `PORT`, or stop the process already listening on it.
+- **SQLite missing:** run `pnpm db:migrate` and `pnpm db:seed`; parent directories are created.
+- **SQLite appears corrupt:** preserve the file for diagnosis, restore a known copy, rerun migrations,
+  then run `pnpm search:rebuild`. The FTS index is derived; raw answers and story tables are not.
+- **Migrations not applied:** run `pnpm db:migrate`. Existing migrations are append-only.
+- **Stale worker lock:** restart after `WORKER_LOCK_TIMEOUT_MS`; startup returns expired locks to the
+  bounded queue or marks exhausted work failed.
+- **Provider disabled:** queued AI work remains durable. Use `pnpm demo:smoke` for the mock path, or
+  explicitly configure Bedrock when a live call is intended.
+- **Bedrock enabled without credentials/config:** startup rejects missing region/model configuration;
+  standard AWS credential resolution reports missing credentials without printing secrets.
+- **Search results missing:** run `pnpm search:rebuild`; rebuild is transactional and idempotent and
+  indexes only currently approved, eligible memory.

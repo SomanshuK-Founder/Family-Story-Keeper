@@ -2,6 +2,9 @@ import { z } from 'zod';
 
 const configSchema = z.object({
   PORT: z.coerce.number().int().min(1).max(65_535).default(3000),
+  HTTP_HOST: z.string().trim().min(1).default('127.0.0.1'),
+  HTTP_ALLOWED_HOSTS: z.string().trim().optional(),
+  HTTP_ALLOWED_ORIGINS: z.string().trim().optional(),
   DATABASE_PATH: z.string().trim().min(1).default('./data/story-keeper.sqlite'),
   STORY_EXTRACTION_PROVIDER: z.enum(['disabled', 'bedrock']).default('disabled'),
   CHAPTER_GENERATION_PROVIDER: z.enum(['disabled', 'bedrock']).default('disabled'),
@@ -24,6 +27,12 @@ export interface WorkerConfig {
   readonly lockTimeoutMs: number;
   readonly retryDelayMs: number;
   readonly jobMaxAttempts: number;
+}
+
+export interface HttpConfig {
+  readonly host: string;
+  readonly allowedHosts?: readonly string[];
+  readonly allowedOrigins?: readonly string[];
 }
 
 export type ExtractionProviderConfig =
@@ -52,6 +61,7 @@ export type ChapterProviderConfig =
 
 export interface AppConfig {
   readonly port: number;
+  readonly http: HttpConfig;
   readonly databasePath: string;
   readonly worker: WorkerConfig;
   readonly extraction: ExtractionProviderConfig;
@@ -60,6 +70,12 @@ export interface AppConfig {
 
 export function loadConfig(environment: NodeJS.ProcessEnv = process.env): AppConfig {
   const parsed = configSchema.parse(environment);
+  const allowedHosts = parseCsv(parsed.HTTP_ALLOWED_HOSTS);
+  const allowedOrigins = parseCsv(parsed.HTTP_ALLOWED_ORIGINS);
+  const loopbackHosts = new Set(['127.0.0.1', 'localhost', '::1']);
+  if (!loopbackHosts.has(parsed.HTTP_HOST) && allowedHosts === undefined) {
+    throw new Error('HTTP_ALLOWED_HOSTS is required when HTTP_HOST is not a loopback host.');
+  }
   const extraction: ExtractionProviderConfig = (() => {
     if (parsed.STORY_EXTRACTION_PROVIDER === 'disabled') return { provider: 'disabled' };
     const region = parsed.AWS_REGION;
@@ -101,6 +117,11 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): AppCon
 
   return {
     port: parsed.PORT,
+    http: {
+      host: parsed.HTTP_HOST,
+      ...(allowedHosts === undefined ? {} : { allowedHosts }),
+      ...(allowedOrigins === undefined ? {} : { allowedOrigins }),
+    },
     databasePath: parsed.DATABASE_PATH,
     worker: {
       pollIntervalMs: parsed.WORKER_POLL_INTERVAL_MS,
@@ -111,4 +132,13 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): AppCon
     extraction,
     chapter,
   };
+}
+
+function parseCsv(value: string | undefined): readonly string[] | undefined {
+  if (value === undefined) return undefined;
+  const entries = value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+  return entries.length === 0 ? undefined : [...new Set(entries)];
 }

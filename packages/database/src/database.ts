@@ -19,6 +19,11 @@ export function createDatabase(databasePath: string): StoryKeeperDatabase {
 
   const client = new BetterSqlite3(databasePath);
   client.pragma('foreign_keys = ON');
+  client.pragma('busy_timeout = 5000');
+  if (databasePath !== ':memory:') {
+    client.pragma('journal_mode = WAL');
+    client.pragma('synchronous = NORMAL');
+  }
 
   return {
     client,

@@ -74,13 +74,16 @@ const { app } = createApplication(
   chapterService,
   presentationService,
   searchService,
+  config.http,
 );
 
 let workerLoop: ExtractionWorkerLoop | undefined;
 let chapterWorkerLoop: ChapterWorkerLoop | undefined;
 const jobs = new DrizzleJobRepository(database);
+let extractionWorker: ExtractionWorker | undefined;
+let chapterWorker: ChapterWorker | undefined;
 if (config.extraction.provider === 'bedrock') {
-  const worker = new ExtractionWorker(
+  extractionWorker = new ExtractionWorker(
     jobs,
     new DrizzleExtractionRepository(database),
     new DrizzleStoryMemoryRepository(database),
@@ -90,13 +93,9 @@ if (config.extraction.provider === 'bedrock') {
       retryDelayMs: config.worker.retryDelayMs,
     },
   );
-  workerLoop = startExtractionWorkerLoop(worker, jobs, {
-    pollIntervalMs: config.worker.pollIntervalMs,
-    lockTimeoutMs: config.worker.lockTimeoutMs,
-  });
 }
 if (config.chapter.provider === 'bedrock') {
-  const worker = new ChapterWorker(
+  chapterWorker = new ChapterWorker(
     jobs,
     chapterRepository,
     new BedrockChapterGenerationProvider(config.chapter),
@@ -105,22 +104,52 @@ if (config.chapter.provider === 'bedrock') {
       retryDelayMs: config.worker.retryDelayMs,
     },
   );
-  chapterWorkerLoop = startChapterWorkerLoop(worker, jobs, {
+}
+
+const httpServer = await startHttpServer(app, config.port, config.http.host);
+if (extractionWorker !== undefined) {
+  workerLoop = startExtractionWorkerLoop(extractionWorker, jobs, {
+    pollIntervalMs: config.worker.pollIntervalMs,
+    lockTimeoutMs: config.worker.lockTimeoutMs,
+  });
+}
+if (chapterWorker !== undefined) {
+  chapterWorkerLoop = startChapterWorkerLoop(chapterWorker, jobs, {
     pollIntervalMs: config.worker.pollIntervalMs,
     lockTimeoutMs: config.worker.lockTimeoutMs,
   });
 }
 
-const httpServer = await startHttpServer(app, config.port);
-console.log(JSON.stringify({ level: 'info', operation: 'server.start', port: config.port }));
+console.log(
+  JSON.stringify({
+    level: 'info',
+    operation: 'server.start',
+    host: config.http.host,
+    port: config.port,
+  }),
+);
 
-const shutdown = (): void => {
-  workerLoop?.stop();
-  chapterWorkerLoop?.stop();
-  httpServer.close(() => {
+let shutdownPromise: Promise<void> | undefined;
+const shutdown = (signal: NodeJS.Signals): Promise<void> => {
+  shutdownPromise ??= (async () => {
+    console.log(JSON.stringify({ level: 'info', operation: 'server.stop', signal }));
+    await Promise.all([
+      closeHttpServer(),
+      workerLoop?.stop() ?? Promise.resolve(),
+      chapterWorkerLoop?.stop() ?? Promise.resolve(),
+    ]);
     database.close();
-  });
+  })();
+  return shutdownPromise;
 };
 
-process.once('SIGINT', shutdown);
-process.once('SIGTERM', shutdown);
+const closeHttpServer = (): Promise<void> =>
+  new Promise((resolve, reject) => {
+    httpServer.close((error) => {
+      if (error) reject(error);
+      else resolve();
+    });
+  });
+
+process.once('SIGINT', () => void shutdown('SIGINT'));
+process.once('SIGTERM', () => void shutdown('SIGTERM'));

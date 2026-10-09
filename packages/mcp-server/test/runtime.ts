@@ -24,12 +24,13 @@ import {
   SearchService,
 } from '@story-keeper/story-engine';
 
-import { createApplication } from '../src/app.js';
+import { createApplication, type HttpApplicationOptions } from '../src/app.js';
 import { startHttpServer } from '../src/server.js';
 
 export interface TestRuntime {
   readonly database: StoryKeeperDatabase;
   readonly repository: DrizzleInterviewRepository;
+  readonly interviewService: InterviewService;
   readonly narratorMemoryService: NarratorMemoryService;
   readonly privacyService: PrivacyService;
   readonly familyQuestionService: FamilyQuestionService;
@@ -41,7 +42,10 @@ export interface TestRuntime {
   close(): Promise<void>;
 }
 
-export async function startTestRuntime(databasePath: string): Promise<TestRuntime> {
+export async function startTestRuntime(
+  databasePath: string,
+  httpOptions: HttpApplicationOptions = {},
+): Promise<TestRuntime> {
   const database = createDatabase(databasePath);
   runMigrations(database);
   seedDemoData(database);
@@ -77,13 +81,16 @@ export async function startTestRuntime(databasePath: string): Promise<TestRuntim
     chapterService,
     presentationService,
     searchService,
+    httpOptions,
   );
-  const httpServer = await startHttpServer(app, 0);
+  const host = httpOptions.host ?? '127.0.0.1';
+  const httpServer = await startHttpServer(app, 0, host);
   const address = httpServer.address() as AddressInfo;
 
   return {
     database,
     repository,
+    interviewService,
     narratorMemoryService,
     privacyService,
     familyQuestionService,

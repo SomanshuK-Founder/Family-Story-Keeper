@@ -9,6 +9,7 @@ import {
   runMigrations,
   seedDemoData,
 } from '@story-keeper/database';
+import { maximumRawAnswerLength } from '@story-keeper/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { StoryKeeperError } from '../src/errors.js';
@@ -68,6 +69,26 @@ describe('InterviewService', () => {
       interviewId: started.interviewId,
       questionText: phaseOneQuestionBank[1]?.text,
     });
+  });
+
+  it('rejects empty and oversized answers before creating durable state', () => {
+    const started = service.startInterview(demoSeedIds.familyId, demoSeedIds.rosaPersonId);
+
+    for (const rawText of ['   ', 'x'.repeat(maximumRawAnswerLength + 1)]) {
+      expect(() =>
+        service.saveAnswer(demoSeedIds.familyId, started.interviewId, started.questionId, rawText),
+      ).toThrow(
+        expect.objectContaining<Partial<StoryKeeperError>>({ code: 'ANSWER_TEXT_INVALID' }),
+      );
+    }
+    expect(
+      repository.findAnswerByQuestion(
+        demoSeedIds.familyId,
+        started.interviewId,
+        started.questionId,
+      ),
+    ).toBeUndefined();
+    expect(new DrizzleJobRepository(database).listByFamily(demoSeedIds.familyId)).toEqual([]);
   });
 
   it('does not create story memory automatically when an answer is saved', () => {

@@ -66,7 +66,7 @@ export class ChapterWorker {
 }
 
 export interface ChapterWorkerLoop {
-  stop(): void;
+  stop(): Promise<void>;
 }
 
 export function startChapterWorkerLoop(
@@ -74,31 +74,36 @@ export function startChapterWorkerLoop(
   jobs: DrizzleJobRepository,
   options: { readonly pollIntervalMs: number; readonly lockTimeoutMs: number },
 ): ChapterWorkerLoop {
-  let polling = false;
+  let activePoll: Promise<void> | undefined;
   jobs.recoverStaleJobs(new Date(Date.now() - options.lockTimeoutMs));
 
   const poll = async (): Promise<void> => {
-    if (polling) return;
-    polling = true;
+    if (activePoll !== undefined) return activePoll;
+    activePoll = (async () => {
+      try {
+        await worker.processNext();
+      } catch (error: unknown) {
+        console.error(
+          JSON.stringify({
+            level: 'error',
+            operation: 'chapter_worker.poll',
+            errorCategory: error instanceof Error ? error.name : 'UnknownError',
+          }),
+        );
+      }
+    })();
     try {
-      await worker.processNext();
-    } catch (error: unknown) {
-      console.error(
-        JSON.stringify({
-          level: 'error',
-          operation: 'chapter_worker.poll',
-          errorCategory: error instanceof Error ? error.name : 'UnknownError',
-        }),
-      );
+      await activePoll;
     } finally {
-      polling = false;
+      activePoll = undefined;
     }
   };
   const timer = setInterval(() => void poll(), options.pollIntervalMs);
   void poll();
   return {
-    stop: (): void => {
+    stop: async (): Promise<void> => {
       clearInterval(timer);
+      await activePoll;
     },
   };
 }

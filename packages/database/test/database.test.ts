@@ -6,7 +6,12 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { createDatabase } from '../src/database.js';
 import { defaultMigrationsFolder, runMigrations } from '../src/migrations.js';
-import { demoSeedIds, seedDemoData } from '../src/seed.js';
+import {
+  demoSeedIds,
+  demoShowcaseSeedIds,
+  seedDemoData,
+  seedDemoShowcaseData,
+} from '../src/seed.js';
 
 const temporaryDirectories: string[] = [];
 
@@ -23,6 +28,20 @@ describe('database foundation', () => {
     try {
       const result = database.client.pragma('foreign_keys', { simple: true });
       expect(result).toBe(1);
+      expect(database.client.pragma('busy_timeout', { simple: true })).toBe(5_000);
+    } finally {
+      database.close();
+    }
+  });
+
+  it('uses WAL and NORMAL synchronous mode for file-backed databases', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'story-keeper-sqlite-hardening-'));
+    temporaryDirectories.push(directory);
+    const database = createDatabase(join(directory, 'hardening.sqlite'));
+    try {
+      expect(database.client.pragma('journal_mode', { simple: true })).toBe('wal');
+      expect(database.client.pragma('synchronous', { simple: true })).toBe(1);
+      expect(database.client.pragma('foreign_keys', { simple: true })).toBe(1);
     } finally {
       database.close();
     }
@@ -521,6 +540,30 @@ describe('database foundation', () => {
       expect(
         database.client.prepare('SELECT id, canonical_display_name FROM people').all(),
       ).toEqual([{ id: demoSeedIds.rosaPersonId, canonical_display_name: 'Rosa' }]);
+    } finally {
+      database.close();
+    }
+  });
+
+  it('seeds the fictional showcase roles idempotently', () => {
+    const database = createDatabase(':memory:');
+    try {
+      runMigrations(database);
+      expect(seedDemoShowcaseData(database)).toEqual(demoShowcaseSeedIds);
+      expect(seedDemoShowcaseData(database)).toEqual(demoShowcaseSeedIds);
+      expect(
+        database.client
+          .prepare(
+            `SELECT p.canonical_display_name AS name, m.role
+             FROM family_memberships m JOIN people p ON p.id = m.person_id
+             ORDER BY p.canonical_display_name`,
+          )
+          .all(),
+      ).toEqual([
+        { name: 'Arun', role: 'child' },
+        { name: 'Maya', role: 'relative' },
+        { name: 'Rosa', role: 'narrator' },
+      ]);
     } finally {
       database.close();
     }

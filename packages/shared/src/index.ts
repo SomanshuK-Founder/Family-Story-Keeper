@@ -4,6 +4,7 @@ export {
   type ChapterProviderConfig,
   type ExtractionProviderConfig,
 } from './config.js';
+export { maximumRawAnswerLength } from './limits.js';
 export {
   chapterDraftStatuses,
   chapterDraftStatusSchema,

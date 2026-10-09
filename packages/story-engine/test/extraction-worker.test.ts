@@ -16,12 +16,13 @@ import {
   seedDemoData,
   type StoryKeeperDatabase,
 } from '@story-keeper/database';
+import type { StoryExtraction } from '@story-keeper/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { ExtractionWorker } from '../src/extraction-worker.js';
+import { ExtractionWorker, startExtractionWorkerLoop } from '../src/extraction-worker.js';
 import { InterviewService } from '../src/interview-service.js';
 
-const emptyExtraction = {
+const emptyExtraction: StoryExtraction = {
   people: [],
   relationships: [],
   events: [],
@@ -29,7 +30,7 @@ const emptyExtraction = {
   dateMentions: [],
   factCandidates: [],
   followUpCandidates: [],
-} as const;
+};
 
 describe('ExtractionWorker', () => {
   let database: StoryKeeperDatabase;
@@ -304,6 +305,37 @@ describe('ExtractionWorker', () => {
     expect(await worker.processNext()).toBe('failed');
     expect(memory.listFacts(demoSeedIds.familyId)).toEqual([]);
     expect(jobs.listByFamily(demoSeedIds.familyId)[0]?.lastErrorCode).toBe('INVALID_EXTRACTION');
+  });
+
+  it('waits for an in-flight poll during graceful worker shutdown', async () => {
+    let releaseProvider: (() => void) | undefined;
+    let markProviderStarted: (() => void) | undefined;
+    const providerStarted = new Promise<void>((resolve) => {
+      markProviderStarted = resolve;
+    });
+    const provider: StoryExtractionProvider = {
+      extract: () =>
+        new Promise((resolve) => {
+          releaseProvider = () => {
+            resolve(emptyExtraction);
+          };
+          markProviderStarted?.();
+        }),
+    };
+    const loop = startExtractionWorkerLoop(createWorker(provider), jobs, {
+      pollIntervalMs: 60_000,
+      lockTimeoutMs: 60_000,
+    });
+    await providerStarted;
+    let stopped = false;
+    const stopping = loop.stop().then(() => {
+      stopped = true;
+    });
+    await Promise.resolve();
+    expect(stopped).toBe(false);
+    releaseProvider?.();
+    await stopping;
+    expect(jobs.listByFamily(demoSeedIds.familyId)[0]?.status).toBe('succeeded');
   });
 
   function createWorker(provider: StoryExtractionProvider, retryDelayMs = 1_000): ExtractionWorker {

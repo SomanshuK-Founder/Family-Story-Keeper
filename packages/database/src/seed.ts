@@ -7,6 +7,14 @@ export const demoSeedIds = {
   rosaMembershipId: '00000000-0000-4000-8000-000000000003',
 } as const;
 
+export const demoShowcaseSeedIds = {
+  ...demoSeedIds,
+  mayaPersonId: '00000000-0000-4000-8000-000000000004',
+  mayaMembershipId: '00000000-0000-4000-8000-000000000005',
+  arunPersonId: '00000000-0000-4000-8000-000000000006',
+  arunMembershipId: '00000000-0000-4000-8000-000000000007',
+} as const;
+
 export function seedDemoData(database: StoryKeeperDatabase): typeof demoSeedIds {
   const now = new Date();
 
@@ -65,4 +73,64 @@ export function seedDemoData(database: StoryKeeperDatabase): typeof demoSeedIds 
   });
 
   return demoSeedIds;
+}
+
+/** Seeds fictional demo actors without creating or bypassing story-memory workflows. */
+export function seedDemoShowcaseData(database: StoryKeeperDatabase): typeof demoShowcaseSeedIds {
+  seedDemoData(database);
+  const now = new Date();
+  database.db.transaction((transaction) => {
+    for (const person of [
+      {
+        id: demoShowcaseSeedIds.mayaPersonId,
+        membershipId: demoShowcaseSeedIds.mayaMembershipId,
+        displayName: 'Maya',
+        role: 'relative' as const,
+      },
+      {
+        id: demoShowcaseSeedIds.arunPersonId,
+        membershipId: demoShowcaseSeedIds.arunMembershipId,
+        displayName: 'Arun',
+        role: 'child' as const,
+      },
+    ]) {
+      transaction
+        .insert(people)
+        .values({
+          id: person.id,
+          familyId: demoShowcaseSeedIds.familyId,
+          canonicalDisplayName: person.displayName,
+          status: 'active',
+          createdAt: now,
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: people.id,
+          set: {
+            familyId: demoShowcaseSeedIds.familyId,
+            canonicalDisplayName: person.displayName,
+            status: 'active',
+            updatedAt: now,
+          },
+        })
+        .run();
+      transaction
+        .insert(familyMemberships)
+        .values({
+          id: person.membershipId,
+          familyId: demoShowcaseSeedIds.familyId,
+          personId: person.id,
+          role: person.role,
+          status: 'active',
+          createdAt: now,
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: familyMemberships.id,
+          set: { role: person.role, status: 'active', updatedAt: now },
+        })
+        .run();
+    }
+  });
+  return demoShowcaseSeedIds;
 }

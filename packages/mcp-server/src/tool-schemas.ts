@@ -13,6 +13,7 @@ import {
   searchFamilyStoryOutputSchema,
   storyItemTargetTypeSchema,
   timelineResponseSchema,
+  maximumRawAnswerLength,
 } from '@story-keeper/shared';
 
 const opaqueId = z.uuid();
@@ -38,6 +39,10 @@ export const saveAnswerInputSchema = z.object({
   questionId: opaqueId,
   rawText: z
     .string()
+    .max(
+      maximumRawAnswerLength,
+      `rawText must be at most ${String(maximumRawAnswerLength)} characters`,
+    )
     .refine((value) => value.trim().length > 0, { message: 'rawText must not be empty' }),
 });
 

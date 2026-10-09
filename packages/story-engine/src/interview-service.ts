@@ -4,6 +4,7 @@ import type {
   InterviewRepository,
   QuestionRecord,
 } from '@story-keeper/database';
+import { maximumRawAnswerLength } from '@story-keeper/shared';
 
 import { StoryKeeperError } from './errors.js';
 import type { FamilyQuestionService } from './family-question-service.js';
@@ -64,6 +65,12 @@ export class InterviewService {
     questionId: string,
     rawText: string,
   ): SaveAnswerResult {
+    if (rawText.trim().length === 0 || rawText.length > maximumRawAnswerLength) {
+      throw new StoryKeeperError(
+        'ANSWER_TEXT_INVALID',
+        `The answer must contain text and be at most ${String(maximumRawAnswerLength)} characters.`,
+      );
+    }
     const interview = this.getInterview(familyId, interviewId);
     const question = this.repository.findQuestion(familyId, interviewId, questionId);
 

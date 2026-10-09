@@ -6,6 +6,7 @@ describe('loadConfig', () => {
   it('uses safe local defaults', () => {
     expect(loadConfig({})).toEqual({
       port: 3000,
+      http: { host: '127.0.0.1' },
       databasePath: './data/story-keeper.sqlite',
       worker: {
         pollIntervalMs: 1_000,
@@ -21,6 +22,7 @@ describe('loadConfig', () => {
   it('parses valid environment values', () => {
     expect(loadConfig({ PORT: '4321', DATABASE_PATH: './tmp/test.sqlite' })).toEqual({
       port: 4321,
+      http: { host: '127.0.0.1' },
       databasePath: './tmp/test.sqlite',
       worker: {
         pollIntervalMs: 1_000,
@@ -73,5 +75,20 @@ describe('loadConfig', () => {
 
   it('rejects an invalid port', () => {
     expect(() => loadConfig({ PORT: '70000' })).toThrow();
+  });
+
+  it('requires an explicit host allowlist for non-loopback binding', () => {
+    expect(() => loadConfig({ HTTP_HOST: '0.0.0.0' })).toThrow('HTTP_ALLOWED_HOSTS is required');
+    expect(
+      loadConfig({
+        HTTP_HOST: '0.0.0.0',
+        HTTP_ALLOWED_HOSTS: 'story-keeper.example.com, localhost, story-keeper.example.com',
+        HTTP_ALLOWED_ORIGINS: 'https://story-keeper.example.com',
+      }).http,
+    ).toEqual({
+      host: '0.0.0.0',
+      allowedHosts: ['story-keeper.example.com', 'localhost'],
+      allowedOrigins: ['https://story-keeper.example.com'],
+    });
   });
 });
