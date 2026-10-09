@@ -10,12 +10,14 @@
   },
   "scripts": {
     "build": "tsc -b --clean && tsc -b",
+    "db:migrate": "node --conditions=development --env-file-if-exists=.env --import tsx packages/database/src/migrate-cli.ts",
+    "db:seed": "node --conditions=development --env-file-if-exists=.env --import tsx packages/database/src/seed-cli.ts",
     "dev": "node --conditions=development --env-file-if-exists=.env --import tsx packages/mcp-server/src/index.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint . --max-warnings 0",
     "test": "vitest run",
-    "typecheck": "tsc -b --pretty false"
+    "typecheck": "tsc -b --pretty false && tsc -p tsconfig.tests.json --pretty false"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

@@ -14,7 +14,8 @@
   },
   "scripts": {
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "node --conditions=development --import tsx src/migrate-cli.ts"
+    "db:migrate": "node --conditions=development --import tsx src/migrate-cli.ts",
+    "db:seed": "node --conditions=development --import tsx src/seed-cli.ts"
   },
   "dependencies": {
     "@story-keeper/shared": "workspace:*",

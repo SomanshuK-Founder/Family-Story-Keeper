@@ -1,24 +1,24 @@
-import express, { type Express } from 'express';
+import { createMcpExpressApp } from '@modelcontextprotocol/sdk/server/express.js';
+import type { Express } from 'express';
 
-import { createMcpRouter, createStoryKeeperMcpServer } from './mcp.js';
+import type { InterviewService } from '@story-keeper/story-engine';
+
+import { createMcpRouter } from './mcp.js';
 
 export interface StoryKeeperApplication {
   readonly app: Express;
-  readonly mcpServer: ReturnType<typeof createStoryKeeperMcpServer>;
 }
 
-export function createApplication(): StoryKeeperApplication {
-  const app = express();
-  const mcpServer = createStoryKeeperMcpServer();
+export function createApplication(interviewService: InterviewService): StoryKeeperApplication {
+  const app = createMcpExpressApp();
 
   app.disable('x-powered-by');
-  app.use(express.json({ limit: '1mb' }));
 
   app.get('/health', (_request, response) => {
     response.status(200).json({ status: 'ok' });
   });
 
-  app.use('/mcp', createMcpRouter());
+  app.use('/mcp', createMcpRouter(interviewService));
 
-  return { app, mcpServer };
+  return { app };
 }

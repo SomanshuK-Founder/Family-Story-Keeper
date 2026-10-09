@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { createDatabase } from '../src/database.js';
 import { runMigrations } from '../src/migrations.js';
+import { demoSeedIds, seedDemoData } from '../src/seed.js';
 
 const temporaryDirectories: string[] = [];
 
@@ -34,12 +35,42 @@ describe('database foundation', () => {
 
     try {
       runMigrations(database);
-      const migrationTable = database.client
-        .prepare(
-          "SELECT name FROM sqlite_master WHERE type = 'table' AND name = '__drizzle_migrations'",
-        )
-        .get();
-      expect(migrationTable).toBeDefined();
+      const tables = database.client
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
+        .all()
+        .map((row) => (row as { name: string }).name);
+
+      expect(tables).toEqual([
+        '__drizzle_migrations',
+        'answers',
+        'families',
+        'family_memberships',
+        'interview_sessions',
+        'people',
+        'questions',
+      ]);
+      expect(
+        database.client.prepare('SELECT count(*) AS count FROM __drizzle_migrations').get(),
+      ).toEqual({ count: 2 });
+    } finally {
+      database.close();
+    }
+  });
+
+  it('seeds the fictional demo family idempotently', () => {
+    const database = createDatabase(':memory:');
+
+    try {
+      runMigrations(database);
+      expect(seedDemoData(database)).toEqual(demoSeedIds);
+      expect(seedDemoData(database)).toEqual(demoSeedIds);
+
+      expect(database.client.prepare('SELECT id, display_name FROM families').all()).toEqual([
+        { id: demoSeedIds.familyId, display_name: 'Story Keeper Demo Family' },
+      ]);
+      expect(
+        database.client.prepare('SELECT id, canonical_display_name FROM people').all(),
+      ).toEqual([{ id: demoSeedIds.rosaPersonId, canonical_display_name: 'Rosa' }]);
     } finally {
       database.close();
     }

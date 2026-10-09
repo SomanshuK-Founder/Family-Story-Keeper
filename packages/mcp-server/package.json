@@ -17,8 +17,10 @@
     "start": "node --env-file-if-exists=../../.env dist/index.js"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.32.1",
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "@story-keeper/database": "workspace:*",
     "@story-keeper/shared": "workspace:*",
+    "@story-keeper/story-engine": "workspace:*",
     "express": "^5.2.1",
     "zod": "^4.1.12"
   }

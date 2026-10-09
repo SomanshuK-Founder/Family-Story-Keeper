@@ -1,38 +1,31 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import request from 'supertest';
 
-import { createApplication } from '../src/app.js';
-import { startHttpServer } from '../src/server.js';
+import { startTestRuntime, type TestRuntime } from './runtime.js';
 
-describe('MCP server foundation', () => {
+describe('HTTP application', () => {
+  let runtime: TestRuntime | undefined;
+
+  afterEach(async () => {
+    await runtime?.close();
+    runtime = undefined;
+  });
+
   it('returns a successful health response', async () => {
-    const { app } = createApplication();
+    runtime = await startTestRuntime(':memory:');
 
-    await request(app).get('/health').expect(200, { status: 'ok' });
+    await request(runtime.httpServer).get('/health').expect(200, { status: 'ok' });
   });
 
-  it('reserves the MCP endpoint without registering product tools', async () => {
-    const { app } = createApplication();
+  it('serves MCP over POST and rejects standalone GET', async () => {
+    runtime = await startTestRuntime(':memory:');
 
-    const response = await request(app).post('/mcp').send({});
-    expect(response.status).toBe(501);
-    expect(response.body).toEqual({
-      error: {
-        code: 'MCP_TRANSPORT_NOT_ENABLED',
-        message: 'The Streamable HTTP transport is introduced in Phase 1.',
-      },
-    });
-  });
-
-  it('boots an HTTP server', async () => {
-    const { app } = createApplication();
-    const server = await startHttpServer(app, 0);
-
-    await new Promise<void>((resolve, reject) => {
-      server.close((error) => {
-        if (error) reject(error);
-        else resolve();
+    await request(runtime.httpServer)
+      .get('/mcp')
+      .expect('Allow', 'POST')
+      .expect(405)
+      .expect((response) => {
+        expect(response.text).toContain('Method not allowed.');
       });
-    });
   });
 });

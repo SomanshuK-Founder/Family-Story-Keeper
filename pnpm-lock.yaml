@@ -224,11 +224,17 @@ importers:
   packages/mcp-server:
     dependencies:
       '@modelcontextprotocol/sdk':
-        specifier: ^1.32.1
+        specifier: 1.32.1
         version: 1.32.1(supports-color@7.2.0)(zod@4.6.5)
+      '@story-keeper/database':
+        specifier: workspace:*
+        version: link:../database
       '@story-keeper/shared':
         specifier: workspace:*
         version: link:../shared
+      '@story-keeper/story-engine':
+        specifier: workspace:*
+        version: link:../story-engine
       express:
         specifier: ^5.2.1
         version: 5.2.1(supports-color@7.2.0)
@@ -242,7 +248,11 @@ importers:
         specifier: ^4.1.12
         version: 4.6.5
 
-  packages/story-engine: {}
+  packages/story-engine:
+    dependencies:
+      '@story-keeper/database':
+        specifier: workspace:*
+        version: link:../database
 
 packages:
 
