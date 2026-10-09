@@ -96,7 +96,19 @@ Possible sources:
 - planner
 - family_queue
 - contradiction
+- clarification
 - follow_up
+
+Phase 4 question types:
+- phase_one_prompt
+- contradiction_clarification
+- person_clarification
+- memory_follow_up
+
+Question status:
+- asked
+- answered
+- superseded
 
 ### `answers`
 - id
@@ -211,6 +223,14 @@ Status:
 - unresolved
 - resolved
 - dismissed
+
+Phase 4 resolution types:
+- keep_left
+- keep_right
+- different_events
+- dismiss_not_a_conflict
+
+`corrected_value` is deferred until corrected claims can retain truthful resolution provenance.
 
 Resolution never erases source evidence.
 

@@ -18,6 +18,17 @@ export {
   type NormalizeExtractionInput,
 } from './extraction-normalizer.js';
 export {
+  NarratorMemoryService,
+  phraseConflictQuestion,
+  type ListPendingConflictsResult,
+  type PlannedQuestion,
+  type PublicConflictClaim,
+  type PublicFactConflictClaim,
+  type PublicPendingConflict,
+  type PublicTimelineConflictClaim,
+  type ResolveConflictResult,
+} from './narrator-memory-service.js';
+export {
   scoreNameMatch,
   type NameCandidate,
   type NameMatchClassification,

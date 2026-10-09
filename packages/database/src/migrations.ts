@@ -10,5 +10,15 @@ export function runMigrations(
   database: StoryKeeperDatabase,
   migrationsFolder = defaultMigrationsFolder,
 ): void {
-  migrate(database.db, { migrationsFolder });
+  const foreignKeysEnabled = database.client.pragma('foreign_keys', { simple: true }) === 1;
+  if (foreignKeysEnabled) database.client.pragma('foreign_keys = OFF');
+  try {
+    migrate(database.db, { migrationsFolder });
+  } finally {
+    if (foreignKeysEnabled) database.client.pragma('foreign_keys = ON');
+  }
+  const foreignKeyViolations: unknown = database.client.pragma('foreign_key_check');
+  if (!Array.isArray(foreignKeyViolations) || foreignKeyViolations.length > 0) {
+    throw new Error('A database migration left invalid foreign-key references.');
+  }
 }

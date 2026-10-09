@@ -29,6 +29,13 @@
       "when": 1791585000000,
       "tag": "0003_phase_three_extraction_jobs",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1791592200000,
+      "tag": "0004_phase_four_conflict_resolution",
+      "breakpoints": true
     }
   ]
 }

@@ -32,6 +32,20 @@ export {
 } from './job-repository.js';
 export { demoSeedIds, seedDemoData } from './seed.js';
 export {
+  DrizzleNarratorMemoryRepository,
+  NarratorMemoryRepositoryError,
+  type ConflictClaimRecord,
+  type FactConflictClaimRecord,
+  type NarratorConflictRecord,
+  type NarratorMemoryRepository,
+  type NarratorMemoryRepositoryErrorCode,
+  type PersonClarificationRecord,
+  type ResolveConflictInput,
+  type ResolveConflictRecord,
+  type TimelineConflictClaimRecord,
+  type TimelinePlanningRecord,
+} from './narrator-memory-repository.js';
+export {
   DrizzleStoryMemoryRepository,
   StoryMemoryRepositoryError,
   type ContradictionRecord,

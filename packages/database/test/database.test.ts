@@ -60,13 +60,13 @@ describe('database foundation', () => {
       ]);
       expect(
         database.client.prepare('SELECT count(*) AS count FROM __drizzle_migrations').get(),
-      ).toEqual({ count: 4 });
+      ).toEqual({ count: 5 });
     } finally {
       database.close();
     }
   });
 
-  it('migrates an existing Phase 2 database forward to Phase 3', () => {
+  it('migrates an existing Phase 2 database forward to the latest schema', () => {
     const directory = mkdtempSync(join(tmpdir(), 'story-keeper-upgrade-'));
     temporaryDirectories.push(directory);
     const phaseTwoMigrations = join(directory, 'phase-two-migrations');
@@ -106,7 +106,84 @@ describe('database foundation', () => {
       expect(tableExists(database, 'person_candidates')).toBe(true);
       expect(
         database.client.prepare('SELECT count(*) AS count FROM __drizzle_migrations').get(),
-      ).toEqual({ count: 4 });
+      ).toEqual({ count: 5 });
+    } finally {
+      database.close();
+    }
+  });
+
+  it('migrates a populated Phase 3 database forward to Phase 4', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'story-keeper-phase-four-upgrade-'));
+    temporaryDirectories.push(directory);
+    const phaseThreeMigrations = join(directory, 'phase-three-migrations');
+    mkdirSync(join(phaseThreeMigrations, 'meta'), { recursive: true });
+    for (const migration of [
+      '0000_phase_zero.sql',
+      '0001_phase_one_interviews.sql',
+      '0002_phase_two_story_memory.sql',
+      '0003_phase_three_extraction_jobs.sql',
+    ]) {
+      copyFileSync(join(defaultMigrationsFolder, migration), join(phaseThreeMigrations, migration));
+    }
+    const journal = JSON.parse(
+      readFileSync(join(defaultMigrationsFolder, 'meta', '_journal.json'), 'utf8'),
+    ) as MigrationJournal;
+    writeFileSync(
+      join(phaseThreeMigrations, 'meta', '_journal.json'),
+      JSON.stringify({ ...journal, entries: journal.entries.slice(0, 4) }),
+    );
+
+    const database = createDatabase(join(directory, 'phase-three.sqlite'));
+    try {
+      runMigrations(database, phaseThreeMigrations);
+      seedDemoData(database);
+      const now = Date.now();
+      const interviewId = '10000000-0000-4000-8000-000000000001';
+      const questionId = '10000000-0000-4000-8000-000000000002';
+      const answerId = '10000000-0000-4000-8000-000000000003';
+      database.client
+        .prepare(
+          `INSERT INTO interview_sessions
+             (id, family_id, narrator_person_id, status, started_at, last_active_at, created_at, updated_at)
+           VALUES (?, ?, ?, 'active', ?, ?, ?, ?)`,
+        )
+        .run(interviewId, demoSeedIds.familyId, demoSeedIds.rosaPersonId, now, now, now, now);
+      database.client
+        .prepare(
+          `INSERT INTO questions
+             (id, family_id, interview_session_id, type, text, source, source_reference_id, status, asked_at, created_at)
+           VALUES (?, ?, ?, 'phase_one_prompt', 'Question?', 'planner', 'legacy', 'answered', ?, ?)`,
+        )
+        .run(questionId, demoSeedIds.familyId, interviewId, now, now);
+      database.client
+        .prepare(
+          `INSERT INTO answers
+             (id, family_id, interview_session_id, question_id, narrator_person_id, raw_text, created_at)
+           VALUES (?, ?, ?, ?, ?, 'Preserved answer.', ?)`,
+        )
+        .run(
+          answerId,
+          demoSeedIds.familyId,
+          interviewId,
+          questionId,
+          demoSeedIds.rosaPersonId,
+          now,
+        );
+
+      runMigrations(database);
+
+      expect(
+        database.client.prepare('SELECT raw_text FROM answers WHERE id = ?').get(answerId),
+      ).toEqual({ raw_text: 'Preserved answer.' });
+      expect(database.client.pragma('foreign_key_check')).toEqual([]);
+      expect(
+        database.client
+          .prepare("SELECT name FROM pragma_table_info('contradictions') WHERE name = ?")
+          .get('resolved_by_person_id'),
+      ).toEqual({ name: 'resolved_by_person_id' });
+      expect(
+        database.client.prepare('SELECT count(*) AS count FROM __drizzle_migrations').get(),
+      ).toEqual({ count: 5 });
     } finally {
       database.close();
     }

@@ -6,6 +6,7 @@ import {
   DrizzleExtractionRepository,
   DrizzleInterviewRepository,
   DrizzleJobRepository,
+  DrizzleNarratorMemoryRepository,
   DrizzleStoryMemoryRepository,
   runMigrations,
 } from '@story-keeper/database';
@@ -13,6 +14,7 @@ import { loadConfig } from '@story-keeper/shared';
 import {
   ExtractionWorker,
   InterviewService,
+  NarratorMemoryService,
   startExtractionWorkerLoop,
   type ExtractionWorkerLoop,
 } from '@story-keeper/story-engine';
@@ -24,8 +26,12 @@ const config = loadConfig();
 const database = createDatabase(config.databasePath);
 runMigrations(database);
 const repository = new DrizzleInterviewRepository(database, config.worker.jobMaxAttempts);
-const interviewService = new InterviewService(repository);
-const { app } = createApplication(interviewService);
+const narratorMemoryService = new NarratorMemoryService(
+  repository,
+  new DrizzleNarratorMemoryRepository(database),
+);
+const interviewService = new InterviewService(repository, narratorMemoryService);
+const { app } = createApplication(interviewService, narratorMemoryService);
 
 let workerLoop: ExtractionWorkerLoop | undefined;
 if (config.extraction.provider === 'bedrock') {

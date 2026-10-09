@@ -5,19 +5,26 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { Router, type Response } from 'express';
 
 import { StoryKeeperError } from '@story-keeper/story-engine';
-import type { InterviewService } from '@story-keeper/story-engine';
+import type { InterviewService, NarratorMemoryService } from '@story-keeper/story-engine';
 
 import { assertAlexaMcpCompatibility } from './protocol.js';
 import {
   getNextQuestionInputSchema,
   getNextQuestionOutputSchema,
+  listPendingConflictsInputSchema,
+  listPendingConflictsOutputSchema,
+  resolveConflictInputSchema,
+  resolveConflictOutputSchema,
   saveAnswerInputSchema,
   saveAnswerOutputSchema,
   startInterviewInputSchema,
   startInterviewOutputSchema,
 } from './tool-schemas.js';
 
-export function createStoryKeeperMcpServer(interviewService: InterviewService): McpServer {
+export function createStoryKeeperMcpServer(
+  interviewService: InterviewService,
+  narratorMemoryService: NarratorMemoryService,
+): McpServer {
   assertAlexaMcpCompatibility();
 
   const server = new McpServer({
@@ -58,14 +65,46 @@ export function createStoryKeeperMcpServer(interviewService: InterviewService): 
       executeTool(() => interviewService.getNextQuestion(familyId, interviewId)),
   );
 
+  server.registerTool(
+    'list_pending_conflicts',
+    {
+      description: 'List unresolved source-backed contradictions for the interview narrator.',
+      inputSchema: listPendingConflictsInputSchema,
+      outputSchema: listPendingConflictsOutputSchema,
+    },
+    ({ familyId, interviewId }) =>
+      executeTool(() => narratorMemoryService.listPendingConflicts(familyId, interviewId)),
+  );
+
+  server.registerTool(
+    'resolve_conflict',
+    {
+      description: 'Record the interview narrator’s explicit resolution of a contradiction.',
+      inputSchema: resolveConflictInputSchema,
+      outputSchema: resolveConflictOutputSchema,
+    },
+    ({ familyId, interviewId, contradictionId, resolutionType }) =>
+      executeTool(() =>
+        narratorMemoryService.resolveConflict(
+          familyId,
+          interviewId,
+          contradictionId,
+          resolutionType,
+        ),
+      ),
+  );
+
   return server;
 }
 
-export function createMcpRouter(interviewService: InterviewService): Router {
+export function createMcpRouter(
+  interviewService: InterviewService,
+  narratorMemoryService: NarratorMemoryService,
+): Router {
   const router = Router();
 
   router.post('/', async (request, response) => {
-    const server = createStoryKeeperMcpServer(interviewService);
+    const server = createStoryKeeperMcpServer(interviewService, narratorMemoryService);
     const transport = new StreamableHTTPServerTransport({ enableJsonResponse: true });
 
     response.on('close', () => {

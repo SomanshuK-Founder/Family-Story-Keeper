@@ -68,3 +68,12 @@ export type ContradictionType = z.infer<typeof contradictionTypeSchema>;
 export const contradictionStatuses = ['unresolved', 'resolved', 'dismissed'] as const;
 export const contradictionStatusSchema = z.enum(contradictionStatuses);
 export type ContradictionStatus = z.infer<typeof contradictionStatusSchema>;
+
+export const contradictionResolutionTypes = [
+  'keep_left',
+  'keep_right',
+  'different_events',
+  'dismiss_not_a_conflict',
+] as const;
+export const contradictionResolutionTypeSchema = z.enum(contradictionResolutionTypes);
+export type ContradictionResolutionType = z.infer<typeof contradictionResolutionTypeSchema>;

@@ -1,6 +1,6 @@
 # Story Keeper MCP Server
 
-Phase 1 exposes MCP `2025-11-25` over Streamable HTTP at `POST /mcp`.
+Story Keeper exposes MCP `2025-11-25` over Streamable HTTP at `POST /mcp`.
 
 The transport is stateless. Durable interview identity and progress are stored in SQLite and use
 `interviewId`; MCP transport sessions are never the product source of truth.
@@ -24,8 +24,22 @@ Persists the raw text unchanged and returns `{ answerId, status: "saved" }`.
 Input: `familyId`, `interviewId`.
 
 Returns one stable shape. While questions remain, `status` is `question` and question fields are
-strings. When the Phase 1 bank is exhausted, `status` is `complete` and both question fields are
-`null`.
+strings. The deterministic planner prioritizes narrator-relevant contradictions and clarifications
+before the fallback interview bank. When no question remains, `status` is `complete` and both
+question fields are `null`.
+
+### `list_pending_conflicts`
+
+Input: `familyId`, `interviewId`.
+
+Returns unresolved, source-backed fact or timeline contradictions scoped to the interview narrator.
+
+### `resolve_conflict`
+
+Input: `familyId`, `interviewId`, `contradictionId`, `resolutionType`.
+
+Records `keep_left`, `keep_right`, `different_events`, or `dismiss_not_a_conflict` with resolver and
+timestamp metadata. Resolution preserves source answers and does not approve the surviving claim.
 
 ## Local demo seed
 

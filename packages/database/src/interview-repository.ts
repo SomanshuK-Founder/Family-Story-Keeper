@@ -31,8 +31,14 @@ export interface QuestionRecord {
   readonly familyId: string;
   readonly interviewId: string;
   readonly text: string;
+  readonly type:
+    | 'phase_one_prompt'
+    | 'contradiction_clarification'
+    | 'person_clarification'
+    | 'memory_follow_up';
+  readonly source: 'planner' | 'contradiction' | 'clarification' | 'follow_up';
   readonly sourceReferenceId: string | null;
-  readonly status: 'asked' | 'answered';
+  readonly status: 'asked' | 'answered' | 'superseded';
 }
 
 export interface AnswerRecord {
@@ -45,6 +51,8 @@ export interface CreateQuestionInput {
   readonly interviewId: string;
   readonly text: string;
   readonly sourceReferenceId: string;
+  readonly type?: QuestionRecord['type'];
+  readonly source?: QuestionRecord['source'];
 }
 
 export interface CreateAnswerInput {
@@ -191,6 +199,8 @@ export class DrizzleInterviewRepository implements InterviewRepository {
         familyId: questions.familyId,
         interviewId: questions.interviewSessionId,
         text: questions.text,
+        type: questions.type,
+        source: questions.source,
         sourceReferenceId: questions.sourceReferenceId,
         status: questions.status,
       })
@@ -207,6 +217,7 @@ export class DrizzleInterviewRepository implements InterviewRepository {
         and(
           eq(questions.familyId, familyId),
           eq(questions.interviewSessionId, interviewId),
+          eq(questions.status, 'asked'),
           isNull(answers.id),
         ),
       )
@@ -226,6 +237,8 @@ export class DrizzleInterviewRepository implements InterviewRepository {
         familyId: questions.familyId,
         interviewId: questions.interviewSessionId,
         text: questions.text,
+        type: questions.type,
+        source: questions.source,
         sourceReferenceId: questions.sourceReferenceId,
         status: questions.status,
       })
@@ -260,9 +273,9 @@ export class DrizzleInterviewRepository implements InterviewRepository {
         id,
         familyId: input.familyId,
         interviewSessionId: input.interviewId,
-        type: 'phase_one_prompt',
+        type: input.type ?? 'phase_one_prompt',
         text: input.text,
-        source: 'planner',
+        source: input.source ?? 'planner',
         sourceReferenceId: input.sourceReferenceId,
         status: 'asked',
         askedAt: now,
@@ -275,6 +288,8 @@ export class DrizzleInterviewRepository implements InterviewRepository {
       familyId: input.familyId,
       interviewId: input.interviewId,
       text: input.text,
+      type: input.type ?? 'phase_one_prompt',
+      source: input.source ?? 'planner',
       sourceReferenceId: input.sourceReferenceId,
       status: 'asked',
     };

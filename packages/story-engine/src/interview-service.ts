@@ -7,6 +7,7 @@ import type {
 
 import { StoryKeeperError } from './errors.js';
 import { phaseOneQuestionBank } from './question-bank.js';
+import type { NarratorMemoryService } from './narrator-memory-service.js';
 
 export interface StartInterviewResult {
   readonly interviewId: string;
@@ -31,7 +32,10 @@ export interface GetNextQuestionResult {
 }
 
 export class InterviewService {
-  public constructor(private readonly repository: InterviewRepository) {}
+  public constructor(
+    private readonly repository: InterviewRepository,
+    private readonly narratorMemory?: NarratorMemoryService,
+  ) {}
 
   public startInterview(familyId: string, personId: string): StartInterviewResult {
     const narrator = this.getNarrator(familyId, personId);
@@ -43,7 +47,10 @@ export class InterviewService {
     if (question === undefined) {
       this.repository.completeInterview(familyId, interview.id);
       interview = this.repository.createInterview(familyId, personId);
-      question = this.createFirstQuestion(interview);
+      question = this.getOrCreateQuestion(interview);
+      if (question === undefined) {
+        throw new Error('The interview planner must provide at least one question.');
+      }
     }
 
     return this.toStartResult(interview, narrator, question);
@@ -62,6 +69,13 @@ export class InterviewService {
       throw new StoryKeeperError(
         'QUESTION_NOT_IN_INTERVIEW',
         'The question does not belong to this interview.',
+      );
+    }
+
+    if (question.status === 'superseded') {
+      throw new StoryKeeperError(
+        'QUESTION_NOT_ACTIVE',
+        'The question is no longer active for this interview.',
       );
     }
 
@@ -138,6 +152,17 @@ export class InterviewService {
     const usedKeys = new Set(
       this.repository.listQuestionSourceReferences(interview.familyId, interview.id),
     );
+    const planned = this.narratorMemory?.planNextQuestion(interview, usedKeys);
+    if (planned !== undefined) {
+      return this.repository.createQuestion({
+        familyId: interview.familyId,
+        interviewId: interview.id,
+        text: planned.text,
+        type: planned.type,
+        source: planned.source,
+        sourceReferenceId: planned.sourceReferenceId,
+      });
+    }
     const next = phaseOneQuestionBank.find((question) => !usedKeys.has(question.key));
 
     return next === undefined
@@ -148,20 +173,6 @@ export class InterviewService {
           text: next.text,
           sourceReferenceId: next.key,
         });
-  }
-
-  private createFirstQuestion(interview: InterviewRecord): QuestionRecord {
-    const first = phaseOneQuestionBank[0];
-    if (first === undefined) {
-      throw new Error('The Phase 1 question bank must not be empty.');
-    }
-
-    return this.repository.createQuestion({
-      familyId: interview.familyId,
-      interviewId: interview.id,
-      text: first.text,
-      sourceReferenceId: first.key,
-    });
   }
 
   private toStartResult(

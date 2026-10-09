@@ -4,11 +4,12 @@ import type { AddressInfo } from 'node:net';
 import {
   createDatabase,
   DrizzleInterviewRepository,
+  DrizzleNarratorMemoryRepository,
   runMigrations,
   seedDemoData,
   type StoryKeeperDatabase,
 } from '@story-keeper/database';
-import { InterviewService } from '@story-keeper/story-engine';
+import { InterviewService, NarratorMemoryService } from '@story-keeper/story-engine';
 
 import { createApplication } from '../src/app.js';
 import { startHttpServer } from '../src/server.js';
@@ -16,6 +17,7 @@ import { startHttpServer } from '../src/server.js';
 export interface TestRuntime {
   readonly database: StoryKeeperDatabase;
   readonly repository: DrizzleInterviewRepository;
+  readonly narratorMemoryService: NarratorMemoryService;
   readonly httpServer: Server;
   readonly mcpUrl: URL;
   close(): Promise<void>;
@@ -26,14 +28,19 @@ export async function startTestRuntime(databasePath: string): Promise<TestRuntim
   runMigrations(database);
   seedDemoData(database);
   const repository = new DrizzleInterviewRepository(database);
-  const interviewService = new InterviewService(repository);
-  const { app } = createApplication(interviewService);
+  const narratorMemoryService = new NarratorMemoryService(
+    repository,
+    new DrizzleNarratorMemoryRepository(database),
+  );
+  const interviewService = new InterviewService(repository, narratorMemoryService);
+  const { app } = createApplication(interviewService, narratorMemoryService);
   const httpServer = await startHttpServer(app, 0);
   const address = httpServer.address() as AddressInfo;
 
   return {
     database,
     repository,
+    narratorMemoryService,
     httpServer,
     mcpUrl: new URL(`http://127.0.0.1:${String(address.port)}/mcp`),
     close: async (): Promise<void> => {

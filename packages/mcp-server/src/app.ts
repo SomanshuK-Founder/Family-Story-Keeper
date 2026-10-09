@@ -1,7 +1,7 @@
 import { createMcpExpressApp } from '@modelcontextprotocol/sdk/server/express.js';
 import type { Express } from 'express';
 
-import type { InterviewService } from '@story-keeper/story-engine';
+import type { InterviewService, NarratorMemoryService } from '@story-keeper/story-engine';
 
 import { createMcpRouter } from './mcp.js';
 
@@ -9,7 +9,10 @@ export interface StoryKeeperApplication {
   readonly app: Express;
 }
 
-export function createApplication(interviewService: InterviewService): StoryKeeperApplication {
+export function createApplication(
+  interviewService: InterviewService,
+  narratorMemoryService: NarratorMemoryService,
+): StoryKeeperApplication {
   const app = createMcpExpressApp();
 
   app.disable('x-powered-by');
@@ -18,7 +21,7 @@ export function createApplication(interviewService: InterviewService): StoryKeep
     response.status(200).json({ status: 'ok' });
   });
 
-  app.use('/mcp', createMcpRouter(interviewService));
+  app.use('/mcp', createMcpRouter(interviewService, narratorMemoryService));
 
   return { app };
 }

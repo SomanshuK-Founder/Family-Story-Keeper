@@ -11,6 +11,7 @@ import {
 } from 'drizzle-orm/sqlite-core';
 
 import type {
+  ContradictionResolutionType,
   ContradictionStatus,
   ContradictionType,
   DatePrecision,
@@ -118,11 +119,20 @@ export const questions = sqliteTable(
     id: text('id').primaryKey(),
     familyId: text('family_id').notNull(),
     interviewSessionId: text('interview_session_id').notNull(),
-    type: text('type').$type<'phase_one_prompt'>().notNull(),
+    type: text('type')
+      .$type<
+        | 'phase_one_prompt'
+        | 'contradiction_clarification'
+        | 'person_clarification'
+        | 'memory_follow_up'
+      >()
+      .notNull(),
     text: text('text').notNull(),
-    source: text('source').$type<'planner'>().notNull(),
+    source: text('source')
+      .$type<'planner' | 'contradiction' | 'clarification' | 'follow_up'>()
+      .notNull(),
     sourceReferenceId: text('source_reference_id'),
-    status: text('status').$type<'asked' | 'answered'>().notNull(),
+    status: text('status').$type<'asked' | 'answered' | 'superseded'>().notNull(),
     askedAt: integer('asked_at', { mode: 'timestamp_ms' }).notNull(),
     createdAt: createdAt(),
   },
@@ -142,9 +152,15 @@ export const questions = sqliteTable(
       foreignColumns: [interviewSessions.familyId, interviewSessions.id],
       name: 'questions_family_interview_fk',
     }).onDelete('cascade'),
-    check('questions_type_check', sql`${table.type} = 'phase_one_prompt'`),
-    check('questions_source_check', sql`${table.source} = 'planner'`),
-    check('questions_status_check', sql`${table.status} IN ('asked', 'answered')`),
+    check(
+      'questions_type_check',
+      sql`${table.type} IN ('phase_one_prompt', 'contradiction_clarification', 'person_clarification', 'memory_follow_up')`,
+    ),
+    check(
+      'questions_source_check',
+      sql`${table.source} IN ('planner', 'contradiction', 'clarification', 'follow_up')`,
+    ),
+    check('questions_status_check', sql`${table.status} IN ('asked', 'answered', 'superseded')`),
   ],
 );
 
@@ -525,8 +541,9 @@ export const contradictions = sqliteTable(
     leftTimelineEventId: text('left_timeline_event_id'),
     rightTimelineEventId: text('right_timeline_event_id'),
     status: text('status').$type<ContradictionStatus>().notNull().default('unresolved'),
-    resolutionType: text('resolution_type'),
+    resolutionType: text('resolution_type').$type<ContradictionResolutionType>(),
     resolutionNote: text('resolution_note'),
+    resolvedByPersonId: text('resolved_by_person_id'),
     resolvedAt: integer('resolved_at', { mode: 'timestamp_ms' }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -540,6 +557,11 @@ export const contradictions = sqliteTable(
       .on(table.familyId, table.leftTimelineEventId, table.rightTimelineEventId)
       .where(sql`${table.contradictionType} = 'timeline_date'`),
     index('contradictions_family_status_idx').on(table.familyId, table.status),
+    foreignKey({
+      columns: [table.familyId, table.resolvedByPersonId],
+      foreignColumns: [people.familyId, people.id],
+      name: 'contradictions_family_resolver_fk',
+    }).onDelete('restrict'),
     foreignKey({
       columns: [table.familyId, table.leftFactId],
       foreignColumns: [facts.familyId, facts.id],
@@ -585,6 +607,25 @@ export const contradictions = sqliteTable(
     check(
       'contradictions_status_check',
       sql`${table.status} IN ('unresolved', 'resolved', 'dismissed')`,
+    ),
+    check(
+      'contradictions_resolution_check',
+      sql`(
+        ${table.status} = 'unresolved'
+        AND ${table.resolutionType} IS NULL
+        AND ${table.resolvedByPersonId} IS NULL
+        AND ${table.resolvedAt} IS NULL
+      ) OR (
+        ${table.status} = 'resolved'
+        AND ${table.resolutionType} IN ('keep_left', 'keep_right', 'different_events')
+        AND ${table.resolvedByPersonId} IS NOT NULL
+        AND ${table.resolvedAt} IS NOT NULL
+      ) OR (
+        ${table.status} = 'dismissed'
+        AND ${table.resolutionType} = 'dismiss_not_a_conflict'
+        AND ${table.resolvedByPersonId} IS NOT NULL
+        AND ${table.resolvedAt} IS NOT NULL
+      )`,
     ),
   ],
 );

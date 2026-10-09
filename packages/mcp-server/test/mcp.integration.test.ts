@@ -10,12 +10,14 @@ import {
   LATEST_PROTOCOL_VERSION,
   SUPPORTED_PROTOCOL_VERSIONS,
 } from '@modelcontextprotocol/sdk/types.js';
-import { demoSeedIds } from '@story-keeper/database';
+import { demoSeedIds, DrizzleStoryMemoryRepository } from '@story-keeper/database';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { ALEXA_MCP_PROTOCOL_VERSION } from '../src/protocol.js';
 import {
   getNextQuestionOutputSchema,
+  listPendingConflictsOutputSchema,
+  resolveConflictOutputSchema,
   saveAnswerOutputSchema,
   startInterviewOutputSchema,
 } from '../src/tool-schemas.js';
@@ -39,7 +41,7 @@ afterEach(async () => {
 });
 
 describe('MCP Streamable HTTP integration', () => {
-  it('negotiates 2025-11-25 and exposes exactly the Phase 1 tools', async () => {
+  it('negotiates 2025-11-25 and exposes exactly the Phase 4 tools', async () => {
     const runtime = await createRuntime(':memory:');
     const { client, transport } = await connectClient(runtime.mcpUrl);
 
@@ -50,12 +52,14 @@ describe('MCP Streamable HTTP integration', () => {
     const tools = await client.listTools();
     expect(tools.tools.map(({ name }) => name).sort()).toEqual([
       'get_next_question',
+      'list_pending_conflicts',
+      'resolve_conflict',
       'save_answer',
       'start_interview',
     ]);
   });
 
-  it('calls all Phase 1 tools and rejects malformed or unknown calls', async () => {
+  it('calls all Story Keeper tools and rejects malformed or unknown calls', async () => {
     const runtime = await createRuntime(':memory:');
     const { client } = await connectClient(runtime.mcpUrl);
     const started = startInterviewOutputSchema.parse(
@@ -85,6 +89,61 @@ describe('MCP Streamable HTTP integration', () => {
     );
     expect(saved.status).toBe('saved');
 
+    const memory = new DrizzleStoryMemoryRepository(runtime.database);
+    const left = memory.createFactWithSource({
+      familyId: demoSeedIds.familyId,
+      subjectPersonId: demoSeedIds.rosaPersonId,
+      factType: 'move_year',
+      normalizedValue: '1962',
+      confidence: 0.9,
+      answerId: saved.answerId,
+    }).fact;
+    const right = memory.createFactWithSource({
+      familyId: demoSeedIds.familyId,
+      subjectPersonId: demoSeedIds.rosaPersonId,
+      factType: 'move_year',
+      normalizedValue: '1964',
+      confidence: 0.9,
+      answerId: saved.answerId,
+    }).fact;
+    const contradiction = memory.createContradiction({
+      familyId: demoSeedIds.familyId,
+      type: 'fact_value',
+      leftFactId: left.id,
+      rightFactId: right.id,
+    });
+
+    const pending = listPendingConflictsOutputSchema.parse(
+      (
+        await client.callTool({
+          name: 'list_pending_conflicts',
+          arguments: { familyId: demoSeedIds.familyId, interviewId: started.interviewId },
+        })
+      ).structuredContent,
+    );
+    expect(pending.conflicts).toEqual([
+      expect.objectContaining({ contradictionId: contradiction.id, status: 'unresolved' }),
+    ]);
+
+    const resolved = resolveConflictOutputSchema.parse(
+      (
+        await client.callTool({
+          name: 'resolve_conflict',
+          arguments: {
+            familyId: demoSeedIds.familyId,
+            interviewId: started.interviewId,
+            contradictionId: contradiction.id,
+            resolutionType: 'keep_left',
+          },
+        })
+      ).structuredContent,
+    );
+    expect(resolved).toMatchObject({
+      contradictionId: contradiction.id,
+      status: 'resolved',
+      resolutionType: 'keep_left',
+    });
+
     const nextResult = await client.callTool({
       name: 'get_next_question',
       arguments: {
@@ -112,6 +171,17 @@ describe('MCP Streamable HTTP integration', () => {
       arguments: { familyId: 'not-an-opaque-id', personId: demoSeedIds.rosaPersonId },
     });
     expect(invalidId.isError).toBe(true);
+
+    const invalidResolution = await client.callTool({
+      name: 'resolve_conflict',
+      arguments: {
+        familyId: demoSeedIds.familyId,
+        interviewId: started.interviewId,
+        contradictionId: contradiction.id,
+        resolutionType: 'corrected_value',
+      },
+    });
+    expect(invalidResolution.isError).toBe(true);
 
     const unknown = CallToolResultSchema.parse(
       await client.callTool({
