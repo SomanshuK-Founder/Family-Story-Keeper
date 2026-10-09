@@ -1,5 +1,16 @@
 export { createDatabase, type StoryKeeperDatabase } from './database.js';
 export {
+  DrizzleChapterRepository,
+  ChapterRepositoryError,
+  minimumChapterSourceCount,
+  type ChapterDraftRecord,
+  type ChapterRepositoryErrorCode,
+  type ChapterSourceRecord,
+  type PublishChapterDraftInput,
+  type RequestChapterDraftInput,
+  type RequestChapterDraftRecord,
+} from './chapter-repository.js';
+export {
   DrizzleFamilyQuestionRepository,
   FamilyQuestionRepositoryError,
   type FamilyQuestionRepository,
@@ -36,8 +47,11 @@ export {
   DrizzleJobRepository,
   JobRepositoryError,
   type ExtractionJobRecord,
+  type ChapterJobRecord,
+  type JobRecord,
   type JobFailure,
   type JobStatus,
+  type JobType,
 } from './job-repository.js';
 export { demoSeedIds, seedDemoData } from './seed.js';
 export {
@@ -45,6 +59,7 @@ export {
   PrivacyRepositoryError,
   type ApplyApprovalInput,
   type ApplyApprovalRecord,
+  type ContextChapterRecord,
   type ContextFactRecord,
   type ContextRelationshipRecord,
   type ContextTimelineEventRecord,

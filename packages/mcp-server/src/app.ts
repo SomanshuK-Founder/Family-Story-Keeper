@@ -3,6 +3,7 @@ import type { Express } from 'express';
 
 import type {
   InterviewService,
+  ChapterService,
   FamilyQuestionService,
   NarratorMemoryService,
   PrivacyService,
@@ -19,6 +20,7 @@ export function createApplication(
   narratorMemoryService: NarratorMemoryService,
   privacyService: PrivacyService,
   familyQuestionService: FamilyQuestionService,
+  chapterService: ChapterService,
 ): StoryKeeperApplication {
   const app = createMcpExpressApp();
 
@@ -30,7 +32,13 @@ export function createApplication(
 
   app.use(
     '/mcp',
-    createMcpRouter(interviewService, narratorMemoryService, privacyService, familyQuestionService),
+    createMcpRouter(
+      interviewService,
+      narratorMemoryService,
+      privacyService,
+      familyQuestionService,
+      chapterService,
+    ),
   );
 
   return { app };

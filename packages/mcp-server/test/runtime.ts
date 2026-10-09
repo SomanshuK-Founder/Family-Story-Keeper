@@ -3,6 +3,7 @@ import type { AddressInfo } from 'node:net';
 
 import {
   createDatabase,
+  DrizzleChapterRepository,
   DrizzleFamilyQuestionRepository,
   DrizzleInterviewRepository,
   DrizzleNarratorMemoryRepository,
@@ -13,6 +14,7 @@ import {
 } from '@story-keeper/database';
 import {
   InterviewService,
+  ChapterService,
   FamilyQuestionService,
   NarratorMemoryService,
   PrivacyService,
@@ -27,6 +29,7 @@ export interface TestRuntime {
   readonly narratorMemoryService: NarratorMemoryService;
   readonly privacyService: PrivacyService;
   readonly familyQuestionService: FamilyQuestionService;
+  readonly chapterService: ChapterService;
   readonly httpServer: Server;
   readonly mcpUrl: URL;
   close(): Promise<void>;
@@ -46,6 +49,7 @@ export async function startTestRuntime(databasePath: string): Promise<TestRuntim
   const familyQuestionService = new FamilyQuestionService(
     new DrizzleFamilyQuestionRepository(database),
   );
+  const chapterService = new ChapterService(new DrizzleChapterRepository(database), 3);
   const interviewService = new InterviewService(
     repository,
     narratorMemoryService,
@@ -56,6 +60,7 @@ export async function startTestRuntime(databasePath: string): Promise<TestRuntim
     narratorMemoryService,
     privacyService,
     familyQuestionService,
+    chapterService,
   );
   const httpServer = await startHttpServer(app, 0);
   const address = httpServer.address() as AddressInfo;
@@ -66,6 +71,7 @@ export async function startTestRuntime(databasePath: string): Promise<TestRuntim
     narratorMemoryService,
     privacyService,
     familyQuestionService,
+    chapterService,
     httpServer,
     mcpUrl: new URL(`http://127.0.0.1:${String(address.port)}/mcp`),
     close: async (): Promise<void> => {

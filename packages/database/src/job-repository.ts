@@ -1,16 +1,20 @@
 import { and, asc, eq } from 'drizzle-orm';
-import { extractAnswerJobPayloadSchema, type ExtractAnswerJobPayload } from '@story-keeper/shared';
+import {
+  draftChapterJobPayloadSchema,
+  extractAnswerJobPayloadSchema,
+  type DraftChapterJobPayload,
+  type ExtractAnswerJobPayload,
+} from '@story-keeper/shared';
 
 import type { StoryKeeperDatabase } from './database.js';
 import { jobs } from './schema.js';
 
 export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
+export type JobType = 'extract_answer' | 'draft_chapter';
 
-export interface ExtractionJobRecord {
+interface BaseJobRecord {
   readonly id: string;
   readonly familyId: string;
-  readonly type: 'extract_answer';
-  readonly payload: ExtractAnswerJobPayload;
   readonly status: JobStatus;
   readonly attemptCount: number;
   readonly maxAttempts: number;
@@ -20,6 +24,18 @@ export interface ExtractionJobRecord {
   readonly completedAt: Date | null;
   readonly lastErrorCode: string | null;
 }
+
+export interface ExtractionJobRecord extends BaseJobRecord {
+  readonly type: 'extract_answer';
+  readonly payload: ExtractAnswerJobPayload;
+}
+
+export interface ChapterJobRecord extends BaseJobRecord {
+  readonly type: 'draft_chapter';
+  readonly payload: DraftChapterJobPayload;
+}
+
+export type JobRecord = ExtractionJobRecord | ChapterJobRecord;
 
 export interface JobFailure {
   readonly code: string;
@@ -37,12 +53,12 @@ export class JobRepositoryError extends Error {
 export class DrizzleJobRepository {
   public constructor(private readonly database: StoryKeeperDatabase) {}
 
-  public findById(jobId: string): ExtractionJobRecord | undefined {
+  public findById(jobId: string): JobRecord | undefined {
     const row = this.database.db.select().from(jobs).where(eq(jobs.id, jobId)).limit(1).get();
     return row === undefined ? undefined : toJobRecord(row);
   }
 
-  public listByFamily(familyId: string): readonly ExtractionJobRecord[] {
+  public listByFamily(familyId: string): readonly JobRecord[] {
     return this.database.db
       .select()
       .from(jobs)
@@ -52,7 +68,22 @@ export class DrizzleJobRepository {
       .map(toJobRecord);
   }
 
-  public claimNext(workerId: string, now = new Date()): ExtractionJobRecord | undefined {
+  public claimNext(workerId: string, now?: Date): ExtractionJobRecord | undefined;
+  public claimNext(
+    workerId: string,
+    now: Date | undefined,
+    type: 'extract_answer',
+  ): ExtractionJobRecord | undefined;
+  public claimNext(
+    workerId: string,
+    now: Date | undefined,
+    type: 'draft_chapter',
+  ): ChapterJobRecord | undefined;
+  public claimNext(
+    workerId: string,
+    now = new Date(),
+    type: JobType = 'extract_answer',
+  ): JobRecord | undefined {
     const timestamp = now.getTime();
     const row = this.database.client
       .prepare(
@@ -67,6 +98,7 @@ export class DrizzleJobRepository {
          WHERE id = (
            SELECT id FROM jobs
            WHERE status = 'queued'
+             AND type = ?
              AND available_at <= ?
              AND attempt_count < max_attempts
            ORDER BY available_at, created_at, id
@@ -75,7 +107,7 @@ export class DrizzleJobRepository {
            AND status = 'queued'
          RETURNING *`,
       )
-      .get(timestamp, workerId, timestamp, timestamp) as RawJobRow | undefined;
+      .get(timestamp, workerId, timestamp, type, timestamp) as RawJobRow | undefined;
 
     return row === undefined ? undefined : toRawJobRecord(row);
   }
@@ -86,10 +118,10 @@ export class DrizzleJobRepository {
     failure: JobFailure,
     retryDelayMs: number,
     now = new Date(),
-  ): ExtractionJobRecord {
+  ): JobRecord {
     const current = this.findById(jobId);
     if (current === undefined || current.status !== 'running' || current.lockedBy !== workerId) {
-      throw new JobRepositoryError('The extraction job is not held by this worker.');
+      throw new JobRepositoryError('The job is not held by this worker.');
     }
 
     const retry = failure.retryable && current.attemptCount < current.maxAttempts;
@@ -108,11 +140,11 @@ export class DrizzleJobRepository {
       .where(and(eq(jobs.id, jobId), eq(jobs.status, 'running'), eq(jobs.lockedBy, workerId)))
       .run();
     if (updated.changes !== 1) {
-      throw new JobRepositoryError('The extraction job lock changed before failure was recorded.');
+      throw new JobRepositoryError('The job lock changed before failure was recorded.');
     }
 
     const result = this.findById(jobId);
-    if (result === undefined) throw new JobRepositoryError('The extraction job disappeared.');
+    if (result === undefined) throw new JobRepositoryError('The job disappeared.');
     return result;
   }
 
@@ -138,7 +170,7 @@ export class DrizzleJobRepository {
 interface RawJobRow {
   readonly id: string;
   readonly family_id: string;
-  readonly type: 'extract_answer';
+  readonly type: JobType;
   readonly payload: string;
   readonly status: JobStatus;
   readonly attempt_count: number;
@@ -150,12 +182,10 @@ interface RawJobRow {
   readonly last_error_code: string | null;
 }
 
-function toJobRecord(row: typeof jobs.$inferSelect): ExtractionJobRecord {
-  return {
+function toJobRecord(row: typeof jobs.$inferSelect): JobRecord {
+  const common = {
     id: row.id,
     familyId: row.familyId,
-    type: row.type,
-    payload: parsePayload(row.payload),
     status: row.status,
     attemptCount: row.attemptCount,
     maxAttempts: row.maxAttempts,
@@ -165,14 +195,15 @@ function toJobRecord(row: typeof jobs.$inferSelect): ExtractionJobRecord {
     completedAt: row.completedAt,
     lastErrorCode: row.lastErrorCode,
   };
+  return row.type === 'extract_answer'
+    ? { ...common, type: row.type, payload: parseExtractionPayload(row.payload) }
+    : { ...common, type: row.type, payload: parseChapterPayload(row.payload) };
 }
 
-function toRawJobRecord(row: RawJobRow): ExtractionJobRecord {
-  return {
+function toRawJobRecord(row: RawJobRow): JobRecord {
+  const common = {
     id: row.id,
     familyId: row.family_id,
-    type: row.type,
-    payload: parsePayload(row.payload),
     status: row.status,
     attemptCount: row.attempt_count,
     maxAttempts: row.max_attempts,
@@ -182,8 +213,15 @@ function toRawJobRecord(row: RawJobRow): ExtractionJobRecord {
     completedAt: row.completed_at === null ? null : new Date(row.completed_at),
     lastErrorCode: row.last_error_code,
   };
+  return row.type === 'extract_answer'
+    ? { ...common, type: row.type, payload: parseExtractionPayload(row.payload) }
+    : { ...common, type: row.type, payload: parseChapterPayload(row.payload) };
 }
 
-function parsePayload(payload: string): ExtractAnswerJobPayload {
+function parseExtractionPayload(payload: string): ExtractAnswerJobPayload {
   return extractAnswerJobPayloadSchema.parse(JSON.parse(payload));
+}
+
+function parseChapterPayload(payload: string): DraftChapterJobPayload {
+  return draftChapterJobPayloadSchema.parse(JSON.parse(payload));
 }

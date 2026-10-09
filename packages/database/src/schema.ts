@@ -12,6 +12,9 @@ import {
 
 import type {
   ApprovalAction,
+  ApprovalTargetType,
+  ChapterDraftStatus,
+  ChapterSourceType,
   ConsentEventType,
   ContradictionResolutionType,
   ContradictionStatus,
@@ -20,7 +23,6 @@ import type {
   RelationshipType,
   QueuedQuestionStatus,
   StoryItemStatus,
-  StoryItemTargetType,
 } from '@story-keeper/shared';
 
 const createdAt = () =>
@@ -287,7 +289,7 @@ export const jobs = sqliteTable(
     familyId: text('family_id')
       .notNull()
       .references(() => families.id, { onDelete: 'cascade' }),
-    type: text('type').$type<'extract_answer'>().notNull(),
+    type: text('type').$type<'extract_answer' | 'draft_chapter'>().notNull(),
     payload: text('payload').notNull(),
     deduplicationKey: text('deduplication_key').notNull(),
     status: text('status')
@@ -309,7 +311,7 @@ export const jobs = sqliteTable(
     uniqueIndex('jobs_family_id_id_unique').on(table.familyId, table.id),
     uniqueIndex('jobs_deduplication_key_unique').on(table.deduplicationKey),
     index('jobs_claim_idx').on(table.status, table.availableAt, table.createdAt),
-    check('jobs_type_check', sql`${table.type} = 'extract_answer'`),
+    check('jobs_type_check', sql`${table.type} IN ('extract_answer', 'draft_chapter')`),
     check(
       'jobs_status_check',
       sql`${table.status} IN ('queued', 'running', 'succeeded', 'failed', 'cancelled')`,
@@ -709,6 +711,126 @@ export const contradictions = sqliteTable(
   ],
 );
 
+export const chapterDrafts = sqliteTable(
+  'chapter_drafts',
+  {
+    id: text('id').primaryKey(),
+    familyId: text('family_id')
+      .notNull()
+      .references(() => families.id, { onDelete: 'cascade' }),
+    narratorPersonId: text('narrator_person_id').notNull(),
+    requestedTopic: text('requested_topic').notNull(),
+    title: text('title'),
+    body: text('body'),
+    status: text('status').$type<ChapterDraftStatus>().notNull(),
+    generationJobId: text('generation_job_id').notNull(),
+    reviewedByPersonId: text('reviewed_by_person_id'),
+    reviewedAt: integer('reviewed_at', { mode: 'timestamp_ms' }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    uniqueIndex('chapter_drafts_family_id_id_unique').on(table.familyId, table.id),
+    uniqueIndex('chapter_drafts_generation_job_unique').on(table.generationJobId),
+    index('chapter_drafts_family_narrator_status_idx').on(
+      table.familyId,
+      table.narratorPersonId,
+      table.status,
+      table.createdAt,
+    ),
+    foreignKey({
+      columns: [table.familyId, table.narratorPersonId],
+      foreignColumns: [people.familyId, people.id],
+      name: 'chapter_drafts_family_narrator_fk',
+    }).onDelete('restrict'),
+    foreignKey({
+      columns: [table.familyId, table.generationJobId],
+      foreignColumns: [jobs.familyId, jobs.id],
+      name: 'chapter_drafts_family_job_fk',
+    }).onDelete('restrict'),
+    foreignKey({
+      columns: [table.familyId, table.reviewedByPersonId],
+      foreignColumns: [people.familyId, people.id],
+      name: 'chapter_drafts_family_reviewer_fk',
+    }).onDelete('restrict'),
+    check(
+      'chapter_drafts_topic_check',
+      sql`length(trim(${table.requestedTopic})) > 0 AND length(${table.requestedTopic}) <= 200`,
+    ),
+    check(
+      'chapter_drafts_status_check',
+      sql`${table.status} IN ('generating', 'pending_review', 'approved', 'rejected', 'failed', 'superseded')`,
+    ),
+    check(
+      'chapter_drafts_content_check',
+      sql`(
+        ${table.status} IN ('generating', 'failed')
+        AND ${table.title} IS NULL
+        AND ${table.body} IS NULL
+        AND ${table.reviewedByPersonId} IS NULL
+        AND ${table.reviewedAt} IS NULL
+      ) OR (
+        ${table.status} = 'pending_review'
+        AND length(trim(${table.title})) BETWEEN 1 AND 200
+        AND length(trim(${table.body})) BETWEEN 1 AND 10000
+        AND ${table.reviewedByPersonId} IS NULL
+        AND ${table.reviewedAt} IS NULL
+      ) OR (
+        ${table.status} IN ('approved', 'rejected')
+        AND length(trim(${table.title})) BETWEEN 1 AND 200
+        AND length(trim(${table.body})) BETWEEN 1 AND 10000
+        AND ${table.reviewedByPersonId} IS NOT NULL
+        AND ${table.reviewedAt} IS NOT NULL
+      ) OR (
+        ${table.status} = 'superseded'
+        AND length(trim(${table.title})) BETWEEN 1 AND 200
+        AND length(trim(${table.body})) BETWEEN 1 AND 10000
+      )`,
+    ),
+  ],
+);
+
+export const chapterSources = sqliteTable(
+  'chapter_sources',
+  {
+    id: text('id').primaryKey(),
+    familyId: text('family_id').notNull(),
+    chapterDraftId: text('chapter_draft_id').notNull(),
+    sourceType: text('source_type').$type<ChapterSourceType>().notNull(),
+    sourceId: text('source_id').notNull(),
+    sourceLabel: text('source_label').notNull(),
+    sourceSummary: text('source_summary').notNull(),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    uniqueIndex('chapter_sources_family_id_id_unique').on(table.familyId, table.id),
+    uniqueIndex('chapter_sources_draft_source_unique').on(
+      table.familyId,
+      table.chapterDraftId,
+      table.sourceType,
+      table.sourceId,
+    ),
+    index('chapter_sources_family_draft_idx').on(table.familyId, table.chapterDraftId),
+    foreignKey({
+      columns: [table.familyId, table.chapterDraftId],
+      foreignColumns: [chapterDrafts.familyId, chapterDrafts.id],
+      name: 'chapter_sources_family_draft_fk',
+    }).onDelete('cascade'),
+    check(
+      'chapter_sources_type_check',
+      sql`${table.sourceType} IN ('fact', 'relationship', 'timeline_event')`,
+    ),
+    check(
+      'chapter_sources_label_check',
+      sql`length(trim(${table.sourceLabel})) > 0 AND length(${table.sourceLabel}) <= 300`,
+    ),
+    check(
+      'chapter_sources_summary_check',
+      sql`length(trim(${table.sourceSummary})) > 0 AND length(${table.sourceSummary}) <= 2000`,
+    ),
+  ],
+);
+
 export const approvals = sqliteTable(
   'approvals',
   {
@@ -717,7 +839,7 @@ export const approvals = sqliteTable(
       .notNull()
       .references(() => families.id, { onDelete: 'cascade' }),
     actorPersonId: text('actor_person_id').notNull(),
-    targetType: text('target_type').$type<StoryItemTargetType>().notNull(),
+    targetType: text('target_type').$type<ApprovalTargetType>().notNull(),
     targetId: text('target_id').notNull(),
     action: text('action').$type<ApprovalAction>().notNull(),
     createdAt: createdAt(),
@@ -731,7 +853,7 @@ export const approvals = sqliteTable(
     }).onDelete('restrict'),
     check(
       'approvals_target_type_check',
-      sql`${table.targetType} IN ('fact', 'relationship', 'timeline_event')`,
+      sql`${table.targetType} IN ('fact', 'relationship', 'timeline_event', 'chapter')`,
     ),
     check('approvals_action_check', sql`${table.action} IN ('approve', 'reject', 'revoke')`),
   ],
@@ -746,7 +868,7 @@ export const consentEvents = sqliteTable(
       .references(() => families.id, { onDelete: 'cascade' }),
     personId: text('person_id').notNull(),
     eventType: text('event_type').$type<ConsentEventType>().notNull(),
-    targetType: text('target_type').$type<StoryItemTargetType>().notNull(),
+    targetType: text('target_type').$type<ApprovalTargetType>().notNull(),
     targetId: text('target_id').notNull(),
     createdAt: createdAt(),
   },
@@ -770,7 +892,7 @@ export const consentEvents = sqliteTable(
     ),
     check(
       'consent_events_target_type_check',
-      sql`${table.targetType} IN ('fact', 'relationship', 'timeline_event')`,
+      sql`${table.targetType} IN ('fact', 'relationship', 'timeline_event', 'chapter')`,
     ),
   ],
 );

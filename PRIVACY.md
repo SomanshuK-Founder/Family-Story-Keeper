@@ -56,6 +56,10 @@ For Phase 5, relatives and children receive approved family-visible facts, relat
 timeline events only. Narrators may additionally review pending items relevant to themselves and
 their own unresolved contradictions.
 
+Phase 7 chapter drafts remain narrator-private while generating, pending review, failed, rejected,
+or superseded. An explicitly approved chapter becomes family-visible to relatives and children.
+Chapter review and family context expose structured source labels only and never raw source answers.
+
 Do not overbuild enterprise permissions.
 
 ## Approval

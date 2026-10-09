@@ -408,6 +408,7 @@ describe('Phase 6 family question queue', () => {
       'facts',
       'relationships',
       'timelineEvents',
+      'chapters',
       'conflicts',
     ]);
     expect(relativeContext.visibility).toBe('approved_family');

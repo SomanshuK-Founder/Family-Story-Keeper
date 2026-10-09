@@ -1,5 +1,17 @@
 export { StoryKeeperError, type StoryKeeperErrorCode } from './errors.js';
 export {
+  ChapterService,
+  type RequestChapterDraftResult,
+  type ReviewChapterResult,
+} from './chapter-service.js';
+export {
+  ChapterWorker,
+  startChapterWorkerLoop,
+  type ChapterWorkerLoop,
+  type ChapterWorkerOptions,
+  type ChapterWorkerProcessResult,
+} from './chapter-worker.js';
+export {
   FamilyQuestionService,
   type PlannedFamilyQuestion,
   type QueueFamilyQuestionResult,

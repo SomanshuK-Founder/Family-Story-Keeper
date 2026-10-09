@@ -50,6 +50,13 @@
       "when": 1791765000000,
       "tag": "0006_phase_six_family_questions",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1791851400000,
+      "tag": "0007_phase_seven_chapters",
+      "breakpoints": true
     }
   ]
 }

@@ -267,30 +267,41 @@ queue item to `answered` alongside the raw answer and extraction job.
 - id
 - family_id
 - narrator_person_id
+- requested_topic
 - title
 - body
 - status
+- generation_job_id
+- reviewed_by_person_id
+- reviewed_at
 - created_at
 - updated_at
 
 Status:
 - generating
 - pending_review
+- approved
 - rejected
+- failed
 - superseded
 
-### `chapters`
+For Phase 7, an approved draft is the final approved chapter record. A separate `chapters` table is
+unnecessary because the draft retains its generation job, review state, audit events, and exact
+source snapshot without copying the body into another row.
+
+### `chapter_sources`
 - id
 - family_id
-- narrator_person_id
-- title
-- body
-- approved_at
-- approved_by_person_id
+- chapter_draft_id
+- source_type
+- source_id
+- source_label
+- source_summary
 - created_at
-- updated_at
 
-Source links must be retained.
+Source types are `fact`, `relationship`, and `timeline_event`. Links are created only during atomic
+publication after the source has been revalidated as approved, family-scoped, and narrator-relevant.
+The label and summary are bounded structured-memory snapshots; raw answers are not chapter sources.
 
 ## Approval / Consent
 

@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import {
   approvalActionSchema,
+  approvalTargetTypeSchema,
   approximateDateSchema,
   contradictionResolutionTypeSchema,
   relationshipTypeSchema,
@@ -154,6 +155,16 @@ export const getStoryContextOutputSchema = z.object({
       sourceCount: z.number().int().nonnegative(),
     }),
   ),
+  chapters: z.array(
+    z.object({
+      id: opaqueId,
+      narratorPersonId: opaqueId,
+      title: z.string(),
+      body: z.string(),
+      status: z.literal('approved'),
+      sourceCount: z.number().int().positive(),
+    }),
+  ),
   conflicts: z.array(
     z.object({
       contradictionId: opaqueId,
@@ -166,13 +177,13 @@ export const getStoryContextOutputSchema = z.object({
 export const approveStoryItemInputSchema = z.object({
   familyId: opaqueId,
   actorPersonId: opaqueId,
-  targetType: storyItemTargetTypeSchema,
+  targetType: approvalTargetTypeSchema,
   targetId: opaqueId,
   action: approvalActionSchema,
 });
 
 export const approveStoryItemOutputSchema = z.object({
-  targetType: storyItemTargetTypeSchema,
+  targetType: approvalTargetTypeSchema,
   targetId: opaqueId,
   action: approvalActionSchema,
   status: z.enum(['updated', 'already_applied']),
@@ -203,4 +214,41 @@ export const queueFamilyQuestionInputSchema = z.object({
 export const queueFamilyQuestionOutputSchema = z.object({
   queuedQuestionId: opaqueId,
   status: z.literal('queued'),
+});
+
+export const requestChapterDraftInputSchema = z.object({
+  familyId: opaqueId,
+  actorPersonId: opaqueId,
+  narratorPersonId: opaqueId,
+  chapterTopic: z.string().trim().min(1).max(200),
+});
+
+export const requestChapterDraftOutputSchema = z.object({
+  status: z.enum(['queued', 'insufficient_sources']),
+  chapterDraftId: opaqueId.nullable(),
+  jobId: opaqueId.nullable(),
+  sourceCount: z.number().int().nonnegative(),
+});
+
+export const reviewChapterInputSchema = z.object({
+  familyId: opaqueId,
+  actorPersonId: opaqueId,
+  chapterDraftId: opaqueId,
+});
+
+export const reviewChapterOutputSchema = z.object({
+  chapterDraftId: opaqueId,
+  narratorPersonId: opaqueId,
+  chapterTopic: z.string(),
+  title: z.string().nullable(),
+  body: z.string().nullable(),
+  status: z.enum(['generating', 'pending_review', 'approved', 'rejected', 'failed', 'superseded']),
+  sources: z.array(
+    z.object({
+      type: z.enum(['fact', 'relationship', 'timeline_event']),
+      sourceId: opaqueId,
+      label: z.string(),
+      summary: z.string(),
+    }),
+  ),
 });

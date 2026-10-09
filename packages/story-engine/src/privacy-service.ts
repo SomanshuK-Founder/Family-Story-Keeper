@@ -1,5 +1,6 @@
 import type {
   ApplyApprovalRecord,
+  ContextChapterRecord,
   ContextFactRecord,
   ContextRelationshipRecord,
   ContextTimelineEventRecord,
@@ -8,7 +9,7 @@ import type {
   PrivacyRepository,
 } from '@story-keeper/database';
 import { PrivacyRepositoryError } from '@story-keeper/database';
-import type { ApprovalAction, StoryItemTargetType } from '@story-keeper/shared';
+import type { ApprovalAction, ApprovalTargetType, StoryItemTargetType } from '@story-keeper/shared';
 
 import { StoryKeeperError } from './errors.js';
 
@@ -28,6 +29,7 @@ export interface GetStoryContextResult {
   readonly facts: readonly ContextFactRecord[];
   readonly relationships: readonly ContextRelationshipRecord[];
   readonly timelineEvents: readonly ContextTimelineEventRecord[];
+  readonly chapters: readonly ContextChapterRecord[];
   readonly conflicts: readonly StoryContextConflict[];
 }
 
@@ -76,7 +78,7 @@ export class PrivacyService {
   public approveStoryItem(
     familyId: string,
     actorPersonId: string,
-    targetType: StoryItemTargetType,
+    targetType: ApprovalTargetType,
     targetId: string,
     action: ApprovalAction,
   ): ApproveStoryItemResult {

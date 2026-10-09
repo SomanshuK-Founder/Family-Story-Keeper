@@ -7,6 +7,7 @@ import { Router, type Response } from 'express';
 import { StoryKeeperError } from '@story-keeper/story-engine';
 import type {
   InterviewService,
+  ChapterService,
   FamilyQuestionService,
   NarratorMemoryService,
   PrivacyService,
@@ -26,6 +27,10 @@ import {
   listPendingConflictsOutputSchema,
   queueFamilyQuestionInputSchema,
   queueFamilyQuestionOutputSchema,
+  requestChapterDraftInputSchema,
+  requestChapterDraftOutputSchema,
+  reviewChapterInputSchema,
+  reviewChapterOutputSchema,
   resolveConflictInputSchema,
   resolveConflictOutputSchema,
   saveAnswerInputSchema,
@@ -39,6 +44,7 @@ export function createStoryKeeperMcpServer(
   narratorMemoryService: NarratorMemoryService,
   privacyService: PrivacyService,
   familyQuestionService: FamilyQuestionService,
+  chapterService: ChapterService,
 ): McpServer {
   assertAlexaMcpCompatibility();
 
@@ -159,6 +165,30 @@ export function createStoryKeeperMcpServer(
       ),
   );
 
+  server.registerTool(
+    'request_chapter_draft',
+    {
+      description: 'Queue a grounded chapter draft from approved narrator sources.',
+      inputSchema: requestChapterDraftInputSchema,
+      outputSchema: requestChapterDraftOutputSchema,
+    },
+    ({ familyId, actorPersonId, narratorPersonId, chapterTopic }) =>
+      executeTool(() =>
+        chapterService.requestChapterDraft(familyId, actorPersonId, narratorPersonId, chapterTopic),
+      ),
+  );
+
+  server.registerTool(
+    'review_chapter',
+    {
+      description: 'Return a narrator-owned chapter draft with safe source metadata.',
+      inputSchema: reviewChapterInputSchema,
+      outputSchema: reviewChapterOutputSchema,
+    },
+    ({ familyId, actorPersonId, chapterDraftId }) =>
+      executeTool(() => chapterService.reviewChapter(familyId, actorPersonId, chapterDraftId)),
+  );
+
   return server;
 }
 
@@ -167,6 +197,7 @@ export function createMcpRouter(
   narratorMemoryService: NarratorMemoryService,
   privacyService: PrivacyService,
   familyQuestionService: FamilyQuestionService,
+  chapterService: ChapterService,
 ): Router {
   const router = Router();
 
@@ -176,6 +207,7 @@ export function createMcpRouter(
       narratorMemoryService,
       privacyService,
       familyQuestionService,
+      chapterService,
     );
     const transport = new StreamableHTTPServerTransport({ enableJsonResponse: true });
 

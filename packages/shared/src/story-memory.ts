@@ -8,6 +8,10 @@ export const storyItemTargetTypes = ['fact', 'relationship', 'timeline_event'] a
 export const storyItemTargetTypeSchema = z.enum(storyItemTargetTypes);
 export type StoryItemTargetType = z.infer<typeof storyItemTargetTypeSchema>;
 
+export const approvalTargetTypes = [...storyItemTargetTypes, 'chapter'] as const;
+export const approvalTargetTypeSchema = z.enum(approvalTargetTypes);
+export type ApprovalTargetType = z.infer<typeof approvalTargetTypeSchema>;
+
 export const approvalActions = ['approve', 'reject', 'revoke'] as const;
 export const approvalActionSchema = z.enum(approvalActions);
 export type ApprovalAction = z.infer<typeof approvalActionSchema>;

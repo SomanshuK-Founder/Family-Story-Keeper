@@ -54,7 +54,7 @@ children. It does not return raw answers.
 Input: `familyId`, `actorPersonId`, `targetType`, `targetId`, `action`.
 
 Applies an explicit, provenance-checked `approve`, `reject`, or `revoke` transition to an eligible
-fact, relationship, or timeline event.
+fact, relationship, timeline event, or narrator-owned chapter draft.
 
 ### `delete_pending_memory`
 
@@ -68,6 +68,22 @@ Input: `familyId`, `fromPersonId`, `toPersonId`, `questionText`.
 
 Lets an active relative or child queue a private, bounded question for an active narrator in the
 same family. It returns the stable queued-question ID and `queued` status.
+
+### `request_chapter_draft`
+
+Input: `familyId`, `actorPersonId`, `narratorPersonId`, `chapterTopic`.
+
+Lets an active narrator queue an asynchronous chapter draft for their own story when at least two
+approved narrator-scoped sources exist. Phase 7 treats the bounded topic as writing intent and uses
+all eligible sources in deterministic order; it does not claim semantic search or include hidden or
+pending evidence.
+
+### `review_chapter`
+
+Input: `familyId`, `actorPersonId`, `chapterDraftId`.
+
+Returns a narrator-owned chapter draft and its safe structured source metadata. Raw answers are not
+returned; relatives and children cannot review private drafts.
 
 ## Local demo seed
 

@@ -1,8 +1,12 @@
 import { randomUUID } from 'node:crypto';
 
-import { BedrockStoryExtractionProvider } from '@story-keeper/bedrock';
+import {
+  BedrockChapterGenerationProvider,
+  BedrockStoryExtractionProvider,
+} from '@story-keeper/bedrock';
 import {
   createDatabase,
+  DrizzleChapterRepository,
   DrizzleFamilyQuestionRepository,
   DrizzleExtractionRepository,
   DrizzleInterviewRepository,
@@ -14,12 +18,16 @@ import {
 } from '@story-keeper/database';
 import { loadConfig } from '@story-keeper/shared';
 import {
+  ChapterService,
+  ChapterWorker,
   ExtractionWorker,
   FamilyQuestionService,
   InterviewService,
   NarratorMemoryService,
   PrivacyService,
+  startChapterWorkerLoop,
   startExtractionWorkerLoop,
+  type ChapterWorkerLoop,
   type ExtractionWorkerLoop,
 } from '@story-keeper/story-engine';
 
@@ -39,6 +47,8 @@ const privacyService = new PrivacyService(
 const familyQuestionService = new FamilyQuestionService(
   new DrizzleFamilyQuestionRepository(database),
 );
+const chapterRepository = new DrizzleChapterRepository(database);
+const chapterService = new ChapterService(chapterRepository, config.worker.jobMaxAttempts);
 const interviewService = new InterviewService(
   repository,
   narratorMemoryService,
@@ -49,11 +59,13 @@ const { app } = createApplication(
   narratorMemoryService,
   privacyService,
   familyQuestionService,
+  chapterService,
 );
 
 let workerLoop: ExtractionWorkerLoop | undefined;
+let chapterWorkerLoop: ChapterWorkerLoop | undefined;
+const jobs = new DrizzleJobRepository(database);
 if (config.extraction.provider === 'bedrock') {
-  const jobs = new DrizzleJobRepository(database);
   const worker = new ExtractionWorker(
     jobs,
     new DrizzleExtractionRepository(database),
@@ -69,12 +81,28 @@ if (config.extraction.provider === 'bedrock') {
     lockTimeoutMs: config.worker.lockTimeoutMs,
   });
 }
+if (config.chapter.provider === 'bedrock') {
+  const worker = new ChapterWorker(
+    jobs,
+    chapterRepository,
+    new BedrockChapterGenerationProvider(config.chapter),
+    {
+      workerId: `story-keeper-chapter-${randomUUID()}`,
+      retryDelayMs: config.worker.retryDelayMs,
+    },
+  );
+  chapterWorkerLoop = startChapterWorkerLoop(worker, jobs, {
+    pollIntervalMs: config.worker.pollIntervalMs,
+    lockTimeoutMs: config.worker.lockTimeoutMs,
+  });
+}
 
 const httpServer = await startHttpServer(app, config.port);
 console.log(JSON.stringify({ level: 'info', operation: 'server.start', port: config.port }));
 
 const shutdown = (): void => {
   workerLoop?.stop();
+  chapterWorkerLoop?.stop();
   httpServer.close(() => {
     database.close();
   });

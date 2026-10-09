@@ -2,7 +2,9 @@ import { randomUUID } from 'node:crypto';
 
 import type {
   ApprovalAction,
+  ApprovalTargetType,
   ApproximateDate,
+  ChapterDraftStatus,
   RelationshipType,
   StoryItemStatus,
   StoryItemTargetType,
@@ -13,6 +15,8 @@ import type { StoryKeeperDatabase } from './database.js';
 import {
   answers,
   approvals,
+  chapterDrafts,
+  chapterSources,
   consentEvents,
   facts,
   factSources,
@@ -68,19 +72,29 @@ export interface StoryContextRecord {
   readonly facts: readonly ContextFactRecord[];
   readonly relationships: readonly ContextRelationshipRecord[];
   readonly timelineEvents: readonly ContextTimelineEventRecord[];
+  readonly chapters: readonly ContextChapterRecord[];
+}
+
+export interface ContextChapterRecord {
+  readonly id: string;
+  readonly narratorPersonId: string;
+  readonly title: string;
+  readonly body: string;
+  readonly status: 'approved';
+  readonly sourceCount: number;
 }
 
 export interface ApplyApprovalInput {
   readonly familyId: string;
   readonly actorPersonId: string;
-  readonly targetType: StoryItemTargetType;
+  readonly targetType: ApprovalTargetType;
   readonly targetId: string;
   readonly action: ApprovalAction;
   readonly occurredAt?: Date;
 }
 
 export interface ApplyApprovalRecord {
-  readonly targetType: StoryItemTargetType;
+  readonly targetType: ApprovalTargetType;
   readonly targetId: string;
   readonly action: ApprovalAction;
   readonly status: 'updated' | 'already_applied';
@@ -170,7 +184,7 @@ export class DrizzlePrivacyRepository implements PrivacyRepository {
     return this.database.db.transaction((transaction) => {
       requireNarratorActor(transaction, input.familyId, input.actorPersonId);
 
-      let currentStatus: StoryItemStatus;
+      let currentStatus: StoryItemStatus | ChapterDraftStatus;
       let relevant: boolean;
       if (input.targetType === 'fact') {
         const target = transaction
@@ -199,7 +213,7 @@ export class DrizzlePrivacyRepository implements PrivacyRepository {
         currentStatus = target.status;
         relevant =
           target.fromPersonId === input.actorPersonId || target.toPersonId === input.actorPersonId;
-      } else {
+      } else if (input.targetType === 'timeline_event') {
         const target = transaction
           .select({
             status: timelineEvents.approvalStatus,
@@ -214,6 +228,21 @@ export class DrizzlePrivacyRepository implements PrivacyRepository {
         if (target === undefined) throw storyItemNotFound();
         currentStatus = target.status;
         relevant = target.subjectPersonId === input.actorPersonId;
+      } else {
+        const target = transaction
+          .select({
+            status: chapterDrafts.status,
+            narratorPersonId: chapterDrafts.narratorPersonId,
+          })
+          .from(chapterDrafts)
+          .where(
+            and(eq(chapterDrafts.familyId, input.familyId), eq(chapterDrafts.id, input.targetId)),
+          )
+          .limit(1)
+          .get();
+        if (target === undefined) throw storyItemNotFound();
+        currentStatus = target.status;
+        relevant = target.narratorPersonId === input.actorPersonId;
       }
 
       if (!relevant) {
@@ -224,7 +253,12 @@ export class DrizzlePrivacyRepository implements PrivacyRepository {
       }
 
       const desiredStatus = input.action === 'approve' ? 'approved' : 'rejected';
-      const expectedStatus = input.action === 'revoke' ? 'approved' : 'pending';
+      const expectedStatus =
+        input.action === 'revoke'
+          ? 'approved'
+          : input.targetType === 'chapter'
+            ? 'pending_review'
+            : 'pending';
       if (currentStatus !== expectedStatus) {
         const latestAction = transaction
           .select({ action: approvals.action })
@@ -268,6 +302,7 @@ export class DrizzlePrivacyRepository implements PrivacyRepository {
         expectedStatus,
         desiredStatus,
         occurredAt,
+        input.actorPersonId,
       );
       if (changes !== 1) throw stateConflict();
 
@@ -403,6 +438,7 @@ export class DrizzlePrivacyRepository implements PrivacyRepository {
         'pending',
         'rejected',
         occurredAt,
+        input.actorPersonId,
       );
       if (changes !== 1) throw stateConflict();
 
@@ -477,6 +513,20 @@ export class DrizzlePrivacyRepository implements PrivacyRepository {
       )
       .orderBy(asc(timelineEvents.createdAt), asc(timelineEvents.id))
       .all();
+    const chapterRows = this.database.db
+      .select()
+      .from(chapterDrafts)
+      .where(
+        narratorPersonId === undefined
+          ? and(eq(chapterDrafts.familyId, familyId), eq(chapterDrafts.status, 'approved'))
+          : and(
+              eq(chapterDrafts.familyId, familyId),
+              eq(chapterDrafts.narratorPersonId, narratorPersonId),
+              eq(chapterDrafts.status, 'approved'),
+            ),
+      )
+      .orderBy(asc(chapterDrafts.createdAt), asc(chapterDrafts.id))
+      .all();
 
     return {
       facts: factRows.map((fact) => ({
@@ -511,6 +561,20 @@ export class DrizzlePrivacyRepository implements PrivacyRepository {
         status: event.approvalStatus,
         sourceCount: countTimelineSources(this.database, familyId, event.id),
       })),
+      chapters: chapterRows.flatMap((chapter): readonly ContextChapterRecord[] =>
+        chapter.title === null || chapter.body === null
+          ? []
+          : [
+              {
+                id: chapter.id,
+                narratorPersonId: chapter.narratorPersonId,
+                title: chapter.title,
+                body: chapter.body,
+                status: 'approved',
+                sourceCount: countChapterSources(this.database, familyId, chapter.id),
+              },
+            ],
+      ),
     };
   }
 }
@@ -554,7 +618,7 @@ function requireNarratorActor(
 function requireProvenance(
   transaction: Transaction,
   familyId: string,
-  targetType: StoryItemTargetType,
+  targetType: ApprovalTargetType,
   targetId: string,
 ): void {
   let exists: boolean;
@@ -590,7 +654,7 @@ function requireProvenance(
         )
         .limit(1)
         .get() !== undefined;
-  } else {
+  } else if (targetType === 'timeline_event') {
     exists =
       transaction
         .select({ id: timelineEventSources.id })
@@ -607,6 +671,16 @@ function requireProvenance(
             eq(timelineEventSources.familyId, familyId),
             eq(timelineEventSources.timelineEventId, targetId),
           ),
+        )
+        .limit(1)
+        .get() !== undefined;
+  } else {
+    exists =
+      transaction
+        .select({ id: chapterSources.id })
+        .from(chapterSources)
+        .where(
+          and(eq(chapterSources.familyId, familyId), eq(chapterSources.chapterDraftId, targetId)),
         )
         .limit(1)
         .get() !== undefined;
@@ -671,13 +745,15 @@ function requireResolvedRelationshipIdentity(
 function updateTargetStatus(
   transaction: Transaction,
   familyId: string,
-  targetType: StoryItemTargetType,
+  targetType: ApprovalTargetType,
   targetId: string,
-  expectedStatus: StoryItemStatus,
-  desiredStatus: StoryItemStatus,
+  expectedStatus: StoryItemStatus | 'pending_review',
+  desiredStatus: 'approved' | 'rejected',
   occurredAt: Date,
+  actorPersonId: string,
 ): number {
   if (targetType === 'fact') {
+    if (expectedStatus === 'pending_review') return 0;
     return transaction
       .update(facts)
       .set({ approvalStatus: desiredStatus, updatedAt: occurredAt })
@@ -691,6 +767,7 @@ function updateTargetStatus(
       .run().changes;
   }
   if (targetType === 'relationship') {
+    if (expectedStatus === 'pending_review') return 0;
     return transaction
       .update(relationships)
       .set({ approvalStatus: desiredStatus, updatedAt: occurredAt })
@@ -703,14 +780,34 @@ function updateTargetStatus(
       )
       .run().changes;
   }
+  if (targetType === 'timeline_event') {
+    if (expectedStatus === 'pending_review') return 0;
+    return transaction
+      .update(timelineEvents)
+      .set({ approvalStatus: desiredStatus, updatedAt: occurredAt })
+      .where(
+        and(
+          eq(timelineEvents.familyId, familyId),
+          eq(timelineEvents.id, targetId),
+          eq(timelineEvents.approvalStatus, expectedStatus),
+        ),
+      )
+      .run().changes;
+  }
+  if (expectedStatus === 'pending') return 0;
   return transaction
-    .update(timelineEvents)
-    .set({ approvalStatus: desiredStatus, updatedAt: occurredAt })
+    .update(chapterDrafts)
+    .set({
+      status: desiredStatus,
+      reviewedByPersonId: actorPersonId,
+      reviewedAt: occurredAt,
+      updatedAt: occurredAt,
+    })
     .where(
       and(
-        eq(timelineEvents.familyId, familyId),
-        eq(timelineEvents.id, targetId),
-        eq(timelineEvents.approvalStatus, expectedStatus),
+        eq(chapterDrafts.familyId, familyId),
+        eq(chapterDrafts.id, targetId),
+        eq(chapterDrafts.status, expectedStatus),
       ),
     )
     .run().changes;
@@ -754,6 +851,20 @@ function countTimelineSources(
         eq(timelineEventSources.familyId, familyId),
         eq(timelineEventSources.timelineEventId, eventId),
       ),
+    )
+    .all().length;
+}
+
+function countChapterSources(
+  database: StoryKeeperDatabase,
+  familyId: string,
+  chapterDraftId: string,
+): number {
+  return database.db
+    .select({ id: chapterSources.id })
+    .from(chapterSources)
+    .where(
+      and(eq(chapterSources.familyId, familyId), eq(chapterSources.chapterDraftId, chapterDraftId)),
     )
     .all().length;
 }

@@ -95,7 +95,10 @@ describe('DrizzleJobRepository', () => {
     const restarted = createDatabase(path);
     try {
       const jobs = new DrizzleJobRepository(restarted);
-      expect(jobs.listByFamily(demoSeedIds.familyId)[0]?.payload.answerId).toBe(answerId);
+      const queuedJob = jobs.listByFamily(demoSeedIds.familyId)[0];
+      expect(queuedJob?.type).toBe('extract_answer');
+      if (queuedJob?.type !== 'extract_answer') throw new Error('Expected extraction job.');
+      expect(queuedJob.payload.answerId).toBe(answerId);
       const claimedAt = new Date();
       const claimed = jobs.claimNext('dead-worker', claimedAt);
       if (claimed === undefined) throw new Error('Expected the queued job to be claimable.');

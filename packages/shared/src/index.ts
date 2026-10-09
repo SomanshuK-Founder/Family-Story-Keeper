@@ -1,4 +1,29 @@
-export { loadConfig, type AppConfig } from './config.js';
+export {
+  loadConfig,
+  type AppConfig,
+  type ChapterProviderConfig,
+  type ExtractionProviderConfig,
+} from './config.js';
+export {
+  chapterDraftStatuses,
+  chapterDraftStatusSchema,
+  chapterGenerationJsonSchema,
+  chapterGenerationRequestSchema,
+  chapterGenerationSchema,
+  chapterGenerationSourceSchema,
+  chapterSourceReferenceSchema,
+  chapterSourceTypes,
+  chapterSourceTypeSchema,
+  draftChapterJobPayloadSchema,
+  generatedChapterSourceSchema,
+  type ChapterDraftStatus,
+  type ChapterGeneration,
+  type ChapterGenerationRequest,
+  type ChapterGenerationSource,
+  type ChapterSourceReference,
+  type ChapterSourceType,
+  type DraftChapterJobPayload,
+} from './chapter.js';
 export {
   extractedDateMentionSchema,
   extractedEventSchema,
@@ -18,6 +43,8 @@ export {
 export {
   approvalActions,
   approvalActionSchema,
+  approvalTargetTypes,
+  approvalTargetTypeSchema,
   approximateDateSchema,
   consentEventTypes,
   consentEventTypeSchema,
@@ -38,6 +65,7 @@ export {
   storyItemTargetTypes,
   storyItemTargetTypeSchema,
   type ApprovalAction,
+  type ApprovalTargetType,
   type ApproximateDate,
   type ConsentEventType,
   type ContradictionStatus,

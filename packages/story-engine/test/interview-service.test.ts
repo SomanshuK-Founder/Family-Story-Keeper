@@ -89,7 +89,9 @@ describe('InterviewService', () => {
     expect(queuedJobs).toHaveLength(1);
     expect(queuedJobs[0]?.type).toBe('extract_answer');
     expect(queuedJobs[0]?.status).toBe('queued');
-    expect(queuedJobs[0]?.payload.answerId).toBe(saved.answerId);
+    const queuedJob = queuedJobs[0];
+    if (queuedJob?.type !== 'extract_answer') throw new Error('Expected extraction job.');
+    expect(queuedJob.payload.answerId).toBe(saved.answerId);
   });
 
   it('rolls back the answer if extraction job creation fails', () => {

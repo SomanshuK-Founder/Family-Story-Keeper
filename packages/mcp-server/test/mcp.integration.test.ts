@@ -22,6 +22,8 @@ import {
   getStoryContextOutputSchema,
   listPendingConflictsOutputSchema,
   queueFamilyQuestionOutputSchema,
+  requestChapterDraftOutputSchema,
+  reviewChapterOutputSchema,
   resolveConflictOutputSchema,
   saveAnswerOutputSchema,
   startInterviewOutputSchema,
@@ -46,7 +48,7 @@ afterEach(async () => {
 });
 
 describe('MCP Streamable HTTP integration', () => {
-  it('negotiates 2025-11-25 and exposes exactly the Phase 6 tools', async () => {
+  it('negotiates 2025-11-25 and exposes exactly the Phase 7 tools', async () => {
     const runtime = await createRuntime(':memory:');
     const { client, transport } = await connectClient(runtime.mcpUrl);
 
@@ -62,7 +64,9 @@ describe('MCP Streamable HTTP integration', () => {
       'get_story_context',
       'list_pending_conflicts',
       'queue_family_question',
+      'request_chapter_draft',
       'resolve_conflict',
+      'review_chapter',
       'save_answer',
       'start_interview',
     ]);
@@ -183,6 +187,53 @@ describe('MCP Streamable HTTP integration', () => {
     );
     expect(approved).toMatchObject({ status: 'updated', itemStatus: 'approved' });
 
+    const secondChapterSource = memory.createFactWithSource({
+      familyId: demoSeedIds.familyId,
+      subjectPersonId: demoSeedIds.rosaPersonId,
+      factType: 'childhood_home',
+      normalizedValue: 'A home near a banyan tree',
+      confidence: 0.9,
+      answerId: saved.answerId,
+    }).fact;
+    await client.callTool({
+      name: 'approve_story_item',
+      arguments: {
+        familyId: demoSeedIds.familyId,
+        actorPersonId: demoSeedIds.rosaPersonId,
+        targetType: 'fact',
+        targetId: secondChapterSource.id,
+        action: 'approve',
+      },
+    });
+    const chapterRequest = requestChapterDraftOutputSchema.parse(
+      (
+        await client.callTool({
+          name: 'request_chapter_draft',
+          arguments: {
+            familyId: demoSeedIds.familyId,
+            actorPersonId: demoSeedIds.rosaPersonId,
+            narratorPersonId: demoSeedIds.rosaPersonId,
+            chapterTopic: 'childhood',
+          },
+        })
+      ).structuredContent,
+    );
+    expect(chapterRequest).toMatchObject({ status: 'queued', sourceCount: 2 });
+    if (chapterRequest.chapterDraftId === null) throw new Error('Expected chapter draft ID.');
+    const chapterReview = reviewChapterOutputSchema.parse(
+      (
+        await client.callTool({
+          name: 'review_chapter',
+          arguments: {
+            familyId: demoSeedIds.familyId,
+            actorPersonId: demoSeedIds.rosaPersonId,
+            chapterDraftId: chapterRequest.chapterDraftId,
+          },
+        })
+      ).structuredContent,
+    );
+    expect(chapterReview).toMatchObject({ status: 'generating', title: null, body: null });
+
     const pendingDelete = memory.createFactWithSource({
       familyId: demoSeedIds.familyId,
       subjectPersonId: demoSeedIds.rosaPersonId,
@@ -282,6 +333,17 @@ describe('MCP Streamable HTTP integration', () => {
       },
     });
     expect(invalidFamilyQuestion.isError).toBe(true);
+
+    const invalidChapterRequest = await client.callTool({
+      name: 'request_chapter_draft',
+      arguments: {
+        familyId: demoSeedIds.familyId,
+        actorPersonId: demoSeedIds.rosaPersonId,
+        narratorPersonId: demoSeedIds.rosaPersonId,
+        chapterTopic: '   ',
+      },
+    });
+    expect(invalidChapterRequest.isError).toBe(true);
 
     const unknown = CallToolResultSchema.parse(
       await client.callTool({
