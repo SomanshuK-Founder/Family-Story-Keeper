@@ -2,15 +2,77 @@
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import type {
+  GetStoryContextResult,
+  ListPendingConflictsResult,
+  StoryKeeperClient,
+} from '@story-keeper/mcp-client';
+import { storyKeeperDemoIds } from '@story-keeper/shared';
 
 import { SimulatorApp } from './SimulatorApp.js';
-import type { StoryKeeperInterviewClient } from './lib/mcp/StoryKeeperMcpClient.js';
 import './test-setup.js';
 
 const interviewId = '10000000-0000-4000-8000-000000000001';
 const firstQuestionId = '10000000-0000-4000-8000-000000000002';
 const secondQuestionId = '10000000-0000-4000-8000-000000000003';
 const answerId = '10000000-0000-4000-8000-000000000004';
+
+const rosaContext: GetStoryContextResult = {
+  actor: { id: storyKeeperDemoIds.rosaPersonId, displayName: 'Rosa', role: 'narrator' },
+  visibility: 'narrator_review',
+  facts: [
+    {
+      id: '20000000-0000-4000-8000-000000000001',
+      subjectPersonId: storyKeeperDemoIds.rosaPersonId,
+      factType: 'favorite_place',
+      value: 'The private garden',
+      confidence: 0.9,
+      status: 'pending',
+      sourceCount: 1,
+    },
+  ],
+  relationships: [],
+  timelineEvents: [],
+  chapters: [],
+  conflicts: [],
+};
+
+const mayaContext: GetStoryContextResult = {
+  actor: { id: storyKeeperDemoIds.mayaPersonId, displayName: 'Maya', role: 'relative' },
+  visibility: 'approved_family',
+  facts: [],
+  relationships: [],
+  timelineEvents: [],
+  chapters: [],
+  conflicts: [],
+};
+
+const rosaConflicts: ListPendingConflictsResult = {
+  conflicts: [
+    {
+      contradictionId: '30000000-0000-4000-8000-000000000001',
+      contradictionType: 'fact_value',
+      status: 'unresolved',
+      left: {
+        kind: 'fact',
+        itemId: '20000000-0000-4000-8000-000000000001',
+        factType: 'private_place',
+        value: 'The private garden',
+        status: 'pending',
+        sourceAnswerIds: [answerId],
+      },
+      right: {
+        kind: 'fact',
+        itemId: '20000000-0000-4000-8000-000000000002',
+        factType: 'private_place',
+        value: 'The private courtyard',
+        status: 'pending',
+        sourceAnswerIds: [answerId],
+      },
+      suggestedQuestion: 'Was it the garden or the courtyard?',
+    },
+  ],
+};
 
 function createClient() {
   return {
@@ -25,7 +87,7 @@ function createClient() {
       Promise.resolve({
         interviewId,
         narrator: {
-          id: '00000000-0000-4000-8000-000000000002',
+          id: storyKeeperDemoIds.rosaPersonId,
           displayName: 'Rosa',
         },
         questionId: firstQuestionId,
@@ -46,10 +108,17 @@ function createClient() {
         questionId: secondQuestionId,
         questionText: 'Who made that place feel like home?',
       }),
-    saveAnswer: vi.fn<StoryKeeperInterviewClient['saveAnswer']>(() =>
+    saveAnswer: vi.fn<StoryKeeperClient['saveAnswer']>(() =>
       Promise.resolve({ answerId, status: 'saved' as const }),
     ),
-  } satisfies StoryKeeperInterviewClient;
+    getStoryContext: vi.fn<StoryKeeperClient['getStoryContext']>(({ actorPersonId }) =>
+      Promise.resolve(actorPersonId === rosaContext.actor.id ? rosaContext : mayaContext),
+    ),
+    listPendingConflicts: vi.fn<StoryKeeperClient['listPendingConflicts']>(() =>
+      Promise.resolve({ conflicts: [] }),
+    ),
+    getTimeline: vi.fn<StoryKeeperClient['getTimeline']>(() => Promise.resolve({ items: [] })),
+  } satisfies StoryKeeperClient;
 }
 
 describe('SimulatorApp', () => {
@@ -74,13 +143,17 @@ describe('SimulatorApp', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
     await screen.findByText('15 tools verified');
     fireEvent.click(screen.getByRole('button', { name: 'Start / Resume interview' }));
-    await screen.findByText('What do you remember about your childhood street?');
+    await screen.findByText('What do you remember about your childhood street?', {
+      selector: '.current-question',
+    });
 
     const rawAnswer = '  The street had a large banyan tree.  ';
     fireEvent.change(screen.getByLabelText('Rosa’s answer'), { target: { value: rawAnswer } });
     fireEvent.click(screen.getByRole('button', { name: 'Submit answer' }));
 
-    await screen.findByText('Who made that place feel like home?');
+    await screen.findByText('Who made that place feel like home?', {
+      selector: '.current-question',
+    });
     expect(client.saveAnswer).toHaveBeenCalledWith(expect.objectContaining({ rawText: rawAnswer }));
     expect(screen.getByLabelText('Rosa’s answer')).toHaveValue('');
     expect(window.localStorage.length).toBe(0);
@@ -91,7 +164,7 @@ describe('SimulatorApp', () => {
   it('blocks duplicate submissions while save_answer is in flight', async () => {
     let finishSave: (() => void) | undefined;
     const client = createClient();
-    client.saveAnswer = vi.fn<StoryKeeperInterviewClient['saveAnswer']>(
+    client.saveAnswer = vi.fn<StoryKeeperClient['saveAnswer']>(
       () =>
         new Promise((resolve) => {
           finishSave = () => {
@@ -103,7 +176,9 @@ describe('SimulatorApp', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
     await screen.findByText('15 tools verified');
     fireEvent.click(screen.getByRole('button', { name: 'Start / Resume interview' }));
-    await screen.findByText('What do you remember about your childhood street?');
+    await screen.findByText('What do you remember about your childhood street?', {
+      selector: '.current-question',
+    });
     fireEvent.change(screen.getByLabelText('Rosa’s answer'), { target: { value: 'A memory.' } });
 
     const submit = screen.getByRole('button', { name: 'Submit answer' });
@@ -132,13 +207,32 @@ describe('SimulatorApp', () => {
     expect(screen.getByRole('button', { name: 'Start / Resume interview' })).toBeDisabled();
   });
 
+  it('clears previously loaded memory when reconnect fails', async () => {
+    const client = createClient();
+    render(<SimulatorApp createClient={() => client} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    expect(
+      await screen.findByText(
+        (_, element) =>
+          element?.tagName === 'LI' && element.textContent.includes('The private garden'),
+      ),
+    ).toBeInTheDocument();
+
+    client.reconnect = vi.fn(() => Promise.reject(new Error('server stopped')));
+    fireEvent.click(screen.getByRole('button', { name: 'Reconnect' }));
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(screen.queryByText(/The private garden/)).not.toBeInTheDocument();
+  });
+
   it('reconnects and restores the active interview through start_interview', async () => {
     const client = createClient();
     render(<SimulatorApp createClient={() => client} />);
     fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
     await screen.findByText('15 tools verified');
     fireEvent.click(screen.getByRole('button', { name: 'Start / Resume interview' }));
-    await screen.findByText('What do you remember about your childhood street?');
+    await screen.findByText('What do you remember about your childhood street?', {
+      selector: '.current-question',
+    });
 
     fireEvent.click(screen.getByRole('button', { name: 'Reconnect' }));
     await screen.findByText('Reconnected. Rosa’s interview was restored from Story Keeper.');
@@ -150,5 +244,64 @@ describe('SimulatorApp', () => {
     render(<SimulatorApp createClient={createClient} />);
     fireEvent.click(screen.getByRole('button', { name: '+3 Days' }));
     expect(screen.getByText('Demo day: +3 days')).toBeInTheDocument();
+  });
+
+  it('supersedes late Rosa context and conflict responses after switching to Maya', async () => {
+    let resolveLateRosa: ((context: GetStoryContextResult) => void) | undefined;
+    let resolveLateConflicts: ((conflicts: ListPendingConflictsResult) => void) | undefined;
+    let rosaContextCalls = 0;
+    const client = createClient();
+    client.getStoryContext = vi.fn<StoryKeeperClient['getStoryContext']>(({ actorPersonId }) => {
+      if (actorPersonId !== rosaContext.actor.id) return Promise.resolve(mayaContext);
+      rosaContextCalls += 1;
+      if (rosaContextCalls === 1) return Promise.resolve(rosaContext);
+      return new Promise((resolve) => {
+        resolveLateRosa = resolve;
+      });
+    });
+    client.listPendingConflicts = vi.fn<StoryKeeperClient['listPendingConflicts']>(
+      () =>
+        new Promise((resolve) => {
+          resolveLateConflicts = resolve;
+        }),
+    );
+    render(<SimulatorApp createClient={() => client} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    expect(
+      await screen.findByText(
+        (_, element) =>
+          element?.tagName === 'LI' && element.textContent.includes('The private garden'),
+      ),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Start / Resume interview' }));
+    await waitFor(() => {
+      expect(client.listPendingConflicts).toHaveBeenCalledTimes(1);
+    });
+    fireEvent.change(screen.getByLabelText('Inspect memory as'), { target: { value: 'maya' } });
+
+    expect(screen.queryByText(/The private garden/)).not.toBeInTheDocument();
+    expect(
+      await screen.findByText('No structured story items are visible to Maya.'),
+    ).toBeInTheDocument();
+    expect(client.getStoryContext).toHaveBeenLastCalledWith({
+      familyId: storyKeeperDemoIds.familyId,
+      actorPersonId: mayaContext.actor.id,
+    });
+
+    resolveLateRosa?.(rosaContext);
+    resolveLateConflicts?.(rosaConflicts);
+    await waitFor(() => {
+      expect(
+        screen.getByText('No structured story items are visible to Maya.'),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByText(/The private garden|The private courtyard/),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByText('Conflict review is available only in narrator mode.'),
+      ).toBeInTheDocument();
+    });
+    expect(client.listPendingConflicts).toHaveBeenCalledTimes(1);
   });
 });

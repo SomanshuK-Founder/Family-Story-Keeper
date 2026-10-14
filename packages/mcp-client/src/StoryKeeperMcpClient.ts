@@ -2,17 +2,28 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { FetchLike, Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { CallToolResultSchema, type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import type { PresentationReadInput, TimelineResponse } from '@story-keeper/shared';
 import type { z } from 'zod';
 
 import {
   getNextQuestionInputSchema,
   getNextQuestionResultSchema,
+  getStoryContextInputSchema,
+  getStoryContextResultSchema,
+  listPendingConflictsInputSchema,
+  listPendingConflictsResultSchema,
+  presentationReadInputSchema,
   saveAnswerInputSchema,
   saveAnswerResultSchema,
   startInterviewInputSchema,
   startInterviewResultSchema,
+  timelineResponseSchema,
   type GetNextQuestionInput,
   type GetNextQuestionResult,
+  type GetStoryContextInput,
+  type GetStoryContextResult,
+  type ListPendingConflictsInput,
+  type ListPendingConflictsResult,
   type SaveAnswerInput,
   type SaveAnswerResult,
   type StartInterviewInput,
@@ -49,25 +60,28 @@ export type StoryKeeperClientErrorCode =
   | 'unexpected';
 
 export class StoryKeeperClientError extends Error {
-  public readonly code: StoryKeeperClientErrorCode;
-
-  public constructor(code: StoryKeeperClientErrorCode, message: string) {
+  public constructor(
+    public readonly code: StoryKeeperClientErrorCode,
+    message: string,
+  ) {
     super(message);
     this.name = 'StoryKeeperClientError';
-    this.code = code;
   }
 }
 
-export interface StoryKeeperInterviewClient {
+export interface StoryKeeperClient {
   connect(): Promise<readonly string[]>;
   reconnect(): Promise<readonly string[]>;
   disconnect(): Promise<void>;
   startInterview(input: StartInterviewInput): Promise<StartInterviewResult>;
   getNextQuestion(input: GetNextQuestionInput): Promise<GetNextQuestionResult>;
   saveAnswer(input: SaveAnswerInput): Promise<SaveAnswerResult>;
+  getStoryContext(input: GetStoryContextInput): Promise<GetStoryContextResult>;
+  listPendingConflicts(input: ListPendingConflictsInput): Promise<ListPendingConflictsResult>;
+  getTimeline(input: PresentationReadInput): Promise<TimelineResponse>;
 }
 
-interface McpSession {
+export interface McpSession {
   initialize(): Promise<void>;
   listTools(): Promise<readonly string[]>;
   callTool(name: string, arguments_: Record<string, unknown>): Promise<CallToolResult>;
@@ -76,7 +90,7 @@ interface McpSession {
 
 type McpSessionFactory = (endpoint: URL) => McpSession;
 
-export class StoryKeeperMcpClient implements StoryKeeperInterviewClient {
+export class StoryKeeperMcpClient implements StoryKeeperClient {
   private session: McpSession | undefined;
 
   public constructor(
@@ -141,6 +155,35 @@ export class StoryKeeperMcpClient implements StoryKeeperInterviewClient {
     );
   }
 
+  public getStoryContext(input: GetStoryContextInput): Promise<GetStoryContextResult> {
+    return this.callValidatedTool(
+      'get_story_context',
+      getStoryContextInputSchema,
+      getStoryContextResultSchema,
+      input,
+    );
+  }
+
+  public listPendingConflicts(
+    input: ListPendingConflictsInput,
+  ): Promise<ListPendingConflictsResult> {
+    return this.callValidatedTool(
+      'list_pending_conflicts',
+      listPendingConflictsInputSchema,
+      listPendingConflictsResultSchema,
+      input,
+    );
+  }
+
+  public getTimeline(input: PresentationReadInput): Promise<TimelineResponse> {
+    return this.callValidatedTool(
+      'get_timeline',
+      presentationReadInputSchema,
+      timelineResponseSchema,
+      input,
+    );
+  }
+
   private async callValidatedTool<TInput extends Record<string, unknown>, TOutput>(
     name: string,
     inputSchema: z.ZodType<TInput>,
@@ -148,14 +191,11 @@ export class StoryKeeperMcpClient implements StoryKeeperInterviewClient {
     input: TInput,
   ): Promise<TOutput> {
     const session = this.session;
-    if (session === undefined) {
+    if (session === undefined)
       throw new StoryKeeperClientError('unavailable', 'Story Keeper is not connected.');
-    }
-
     const parsedInput = inputSchema.safeParse(input);
-    if (!parsedInput.success) {
-      throw new StoryKeeperClientError('validation', 'The request needs valid interview details.');
-    }
+    if (!parsedInput.success)
+      throw new StoryKeeperClientError('validation', 'The request details are not valid.');
 
     let result: CallToolResult;
     try {
@@ -166,18 +206,16 @@ export class StoryKeeperMcpClient implements StoryKeeperInterviewClient {
         'The connection to Story Keeper was interrupted.',
       );
     }
-
     if (result.isError === true) throw mapToolError(result);
     const parsedOutput = outputSchema.safeParse(result.structuredContent);
-    if (!parsedOutput.success) {
+    if (!parsedOutput.success)
       throw new StoryKeeperClientError('protocol', 'Story Keeper returned an unexpected response.');
-    }
     return parsedOutput.data;
   }
 }
 
 class OfficialMcpSession implements McpSession {
-  private readonly client = new Client({ name: 'story-keeper-simulator', version: '1.0.0' });
+  private readonly client = new Client({ name: 'story-keeper-browser', version: '1.0.0' });
   private readonly transport: StreamableHTTPClientTransport;
 
   public constructor(endpoint: URL) {
@@ -185,7 +223,6 @@ class OfficialMcpSession implements McpSession {
   }
 
   public async initialize(): Promise<void> {
-    // SDK 1.32.1's class and interface differ only in exact-optional session declarations.
     await this.client.connect(this.transport as Transport);
     if (this.transport.protocolVersion !== ALEXA_MCP_PROTOCOL_VERSION) {
       throw new StoryKeeperClientError(
@@ -213,12 +250,8 @@ class OfficialMcpSession implements McpSession {
 }
 
 const statelessMcpFetch: FetchLike = (url, init) => {
-  // Story Keeper's proven stateless transport supports POST only. The SDK treats a GET 405 as
-  // the expected signal that no optional server-to-client SSE stream exists, so avoid a browser
-  // network error by providing that signal locally while all protocol messages still use fetch.
-  if (init?.method === 'GET') {
+  if (init?.method === 'GET')
     return Promise.resolve(new Response(null, { status: 405, statusText: 'Method Not Allowed' }));
-  }
   return fetch(url, init);
 };
 
@@ -232,7 +265,7 @@ function assertFrozenToolSet(actualTools: readonly string[]): void {
   if (actual.length !== expected.length || actual.some((name, index) => name !== expected[index])) {
     throw new StoryKeeperClientError(
       'tool_contract',
-      'The Story Keeper tool contract does not match this simulator.',
+      'The Story Keeper tool contract does not match this browser.',
     );
   }
 }
@@ -243,7 +276,7 @@ function mapToolError(result: CallToolResult): StoryKeeperClientError {
   if (serverCode?.includes('AUTH') === true || serverCode?.includes('FAMILY') === true) {
     return new StoryKeeperClientError(
       'authorization',
-      'This family member is not authorized for that interview.',
+      'This family member is not authorized for that information.',
     );
   }
   if (
@@ -256,9 +289,8 @@ function mapToolError(result: CallToolResult): StoryKeeperClientError {
       'The interview state changed. Resume the interview and try again.',
     );
   }
-  if (serverCode?.includes('VALIDATION') === true) {
-    return new StoryKeeperClientError('validation', 'The interview response was not valid.');
-  }
+  if (serverCode?.includes('VALIDATION') === true)
+    return new StoryKeeperClientError('validation', 'The Story Keeper request was not valid.');
   return new StoryKeeperClientError('unexpected', 'Story Keeper could not complete that request.');
 }
 

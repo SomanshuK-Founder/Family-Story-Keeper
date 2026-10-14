@@ -6,19 +6,25 @@ import {
   resolveMcpEndpoint,
   StoryKeeperClientError,
   StoryKeeperMcpClient,
-  type StoryKeeperInterviewClient,
-} from './lib/mcp/StoryKeeperMcpClient.js';
-import type { GetNextQuestionResult } from './lib/mcp/contracts.js';
+  type GetNextQuestionResult,
+  type GetStoryContextResult,
+  type ListPendingConflictsResult,
+  type StoryKeeperClient,
+} from '@story-keeper/mcp-client';
+import {
+  DeveloperMemoryInspector,
+  type InspectorActor,
+} from './components/DeveloperMemoryInspector.js';
 
 type ConnectionStatus = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'error';
 type RequestStatus = 'idle' | 'starting' | 'saving';
 
 interface SimulatorAppProps {
-  readonly createClient?: () => StoryKeeperInterviewClient;
+  readonly createClient?: () => StoryKeeperClient;
 }
 
 export function SimulatorApp({ createClient = createDefaultClient }: SimulatorAppProps) {
-  const clientRef = useRef<StoryKeeperInterviewClient | null>(null);
+  const clientRef = useRef<StoryKeeperClient | null>(null);
   if (clientRef.current === null) clientRef.current = createClient();
   const client = clientRef.current;
 
@@ -30,9 +36,18 @@ export function SimulatorApp({ createClient = createDefaultClient }: SimulatorAp
   const [answer, setAnswer] = useState('');
   const [notice, setNotice] = useState('Connect to begin Rosa’s interview.');
   const [error, setError] = useState<{ message: string; code: string } | null>(null);
+  const [inspectorActor, setInspectorActor] = useState<InspectorActor>('rosa');
+  const [storyContext, setStoryContext] = useState<GetStoryContextResult | null>(null);
+  const [conflicts, setConflicts] = useState<ListPendingConflictsResult['conflicts'] | null>(null);
+  const [inspectorStatus, setInspectorStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>(
+    'idle',
+  );
+  const [inspectorError, setInspectorError] = useState<string | null>(null);
+  const inspectorRequestRef = useRef(0);
 
   useEffect(
     () => () => {
+      inspectorRequestRef.current += 1;
       void client.disconnect();
     },
     [client],
@@ -40,6 +55,11 @@ export function SimulatorApp({ createClient = createDefaultClient }: SimulatorAp
 
   async function connect(): Promise<void> {
     const isReconnect = connectionStatus === 'connected' || connectionStatus === 'error';
+    inspectorRequestRef.current += 1;
+    setStoryContext(null);
+    setConflicts(null);
+    setInspectorStatus('idle');
+    setInspectorError(null);
     setConnectionStatus(isReconnect ? 'reconnecting' : 'connecting');
     setError(null);
     setNotice(isReconnect ? 'Reconnecting to Story Keeper…' : 'Connecting to Story Keeper…');
@@ -50,8 +70,11 @@ export function SimulatorApp({ createClient = createDefaultClient }: SimulatorAp
       setNotice('Connected. Story Keeper’s interview tools are ready.');
 
       if (interviewId !== null) {
-        await resumeInterview(client);
+        const resumedInterviewId = await resumeInterview(client);
+        await loadInspector(inspectorActor, resumedInterviewId);
         setNotice('Reconnected. Rosa’s interview was restored from Story Keeper.');
+      } else {
+        await loadInspector(inspectorActor, null);
       }
     } catch (caught: unknown) {
       showError(caught, 'Story Keeper is unavailable. Check the server and try again.');
@@ -65,7 +88,8 @@ export function SimulatorApp({ createClient = createDefaultClient }: SimulatorAp
     setError(null);
     setNotice('Resuming Rosa’s story…');
     try {
-      await resumeInterview(client);
+      const resumedInterviewId = await resumeInterview(client);
+      await loadInspector(inspectorActor, resumedInterviewId);
       setNotice('Rosa’s interview is ready.');
     } catch (caught: unknown) {
       showError(caught, 'Rosa’s interview could not be started. Try again.');
@@ -74,7 +98,7 @@ export function SimulatorApp({ createClient = createDefaultClient }: SimulatorAp
     }
   }
 
-  async function resumeInterview(activeClient: StoryKeeperInterviewClient): Promise<void> {
+  async function resumeInterview(activeClient: StoryKeeperClient): Promise<string> {
     const started = await activeClient.startInterview({
       familyId: storyKeeperDemoIds.familyId,
       personId: storyKeeperDemoIds.rosaPersonId,
@@ -85,6 +109,7 @@ export function SimulatorApp({ createClient = createDefaultClient }: SimulatorAp
     });
     setInterviewId(started.interviewId);
     setQuestion(nextQuestion);
+    return started.interviewId;
   }
 
   async function submitAnswer(event: SyntheticEvent<HTMLFormElement>): Promise<void> {
@@ -112,11 +137,58 @@ export function SimulatorApp({ createClient = createDefaultClient }: SimulatorAp
         interviewId: question.interviewId,
       });
       setQuestion(nextQuestion);
+      await loadInspector(inspectorActor, question.interviewId);
     } catch (caught: unknown) {
       showError(caught, 'Your answer could not be saved. It remains in the answer box.');
     } finally {
       setRequestStatus('idle');
     }
+  }
+
+  async function loadInspector(
+    actor: InspectorActor,
+    activeInterviewId: string | null,
+  ): Promise<void> {
+    const requestId = inspectorRequestRef.current + 1;
+    inspectorRequestRef.current = requestId;
+    setStoryContext(null);
+    setConflicts(null);
+    setInspectorError(null);
+    setInspectorStatus('loading');
+
+    try {
+      const actorPersonId =
+        actor === 'rosa' ? storyKeeperDemoIds.rosaPersonId : storyKeeperDemoIds.mayaPersonId;
+      const contextPromise = client.getStoryContext({
+        familyId: storyKeeperDemoIds.familyId,
+        actorPersonId,
+      });
+      const conflictPromise =
+        actor === 'rosa' && activeInterviewId !== null
+          ? client.listPendingConflicts({
+              familyId: storyKeeperDemoIds.familyId,
+              interviewId: activeInterviewId,
+            })
+          : Promise.resolve({ conflicts: [] });
+      const [nextContext, nextConflicts] = await Promise.all([contextPromise, conflictPromise]);
+      if (inspectorRequestRef.current !== requestId) return;
+      setStoryContext(nextContext);
+      setConflicts(nextConflicts.conflicts);
+      setInspectorStatus('ready');
+    } catch (caught: unknown) {
+      if (inspectorRequestRef.current !== requestId) return;
+      setInspectorStatus('error');
+      setInspectorError(
+        caught instanceof StoryKeeperClientError
+          ? caught.message
+          : 'Structured memory could not be loaded. Try again.',
+      );
+    }
+  }
+
+  function changeInspectorActor(actor: InspectorActor): void {
+    setInspectorActor(actor);
+    void loadInspector(actor, interviewId);
   }
 
   function showError(caught: unknown, fallback: string): void {
@@ -254,6 +326,21 @@ export function SimulatorApp({ createClient = createDefaultClient }: SimulatorAp
           </div>
         </aside>
       </div>
+
+      <DeveloperMemoryInspector
+        actor={inspectorActor}
+        context={storyContext}
+        conflicts={conflicts}
+        interviewState={
+          question?.status === 'complete' ? 'complete' : interviewId === null ? 'none' : 'active'
+        }
+        currentQuestion={question?.status === 'question' ? question.questionText : null}
+        status={inspectorStatus}
+        error={inspectorError}
+        connected={isConnected}
+        onActorChange={changeInspectorActor}
+        onRefresh={() => void loadInspector(inspectorActor, interviewId)}
+      />
     </AppShell>
   );
 }
@@ -266,7 +353,7 @@ const connectionStatusLabels: Record<ConnectionStatus, string> = {
   error: 'Connection needs attention',
 };
 
-function createDefaultClient(): StoryKeeperInterviewClient {
+function createDefaultClient(): StoryKeeperClient {
   const endpoint = resolveMcpEndpoint(import.meta.env.VITE_MCP_URL, window.location.href);
   return new StoryKeeperMcpClient(endpoint);
 }

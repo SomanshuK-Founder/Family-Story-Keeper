@@ -265,9 +265,9 @@ importers:
 
   apps/simulator:
     dependencies:
-      '@modelcontextprotocol/sdk':
-        specifier: 1.32.1
-        version: 1.32.1(supports-color@7.2.0)(zod@4.6.5)
+      '@story-keeper/mcp-client':
+        specifier: workspace:*
+        version: link:../../packages/mcp-client
       '@story-keeper/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -280,12 +280,22 @@ importers:
       react-dom:
         specifier: ^19.2.0
         version: 19.3.0(react@19.3.0)
-      zod:
-        specifier: ^4.1.12
-        version: 4.6.5
+    devDependencies:
+      '@story-keeper/bedrock':
+        specifier: workspace:*
+        version: link:../../packages/bedrock
+      '@story-keeper/database':
+        specifier: workspace:*
+        version: link:../../packages/database
+      '@story-keeper/story-engine':
+        specifier: workspace:*
+        version: link:../../packages/story-engine
 
   apps/timeline:
     dependencies:
+      '@story-keeper/mcp-client':
+        specifier: workspace:*
+        version: link:../../packages/mcp-client
       '@story-keeper/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -323,6 +333,18 @@ importers:
       drizzle-kit:
         specifier: ^0.31.7
         version: 0.31.11
+
+  packages/mcp-client:
+    dependencies:
+      '@modelcontextprotocol/sdk':
+        specifier: 1.32.1
+        version: 1.32.1(supports-color@7.2.0)(zod@4.6.5)
+      '@story-keeper/shared':
+        specifier: workspace:*
+        version: link:../shared
+      zod:
+        specifier: ^4.1.12
+        version: 4.6.5
 
   packages/mcp-server:
     dependencies:

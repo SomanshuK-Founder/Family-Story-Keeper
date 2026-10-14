@@ -3,6 +3,7 @@
   "references": [
     { "path": "./packages/shared" },
     { "path": "./packages/ui" },
+    { "path": "./packages/mcp-client" },
     { "path": "./packages/database" },
     { "path": "./packages/story-engine" },
     { "path": "./packages/bedrock" },

@@ -49,6 +49,130 @@
   min-height: 30rem;
   padding: clamp(1.25rem, 3vw, 2.25rem);
 }
+.developer-inspector {
+  margin-top: 1.25rem;
+  padding: clamp(1.25rem, 3vw, 2rem);
+  background: #f1eee9;
+  border: 1px dashed #8c8178;
+  border-radius: 1rem;
+}
+.developer-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 1.5rem;
+}
+.developer-heading h2 {
+  margin: 0 0 0.4rem;
+  font-size: clamp(1.4rem, 3vw, 1.9rem);
+}
+.developer-heading p:not(.panel-label) {
+  margin: 0;
+  color: var(--muted);
+}
+.developer-controls {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 0.35rem 0.65rem;
+  align-items: center;
+  min-width: 18rem;
+}
+.developer-controls label {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 750;
+}
+.developer-controls select,
+.developer-controls button {
+  min-height: 2.75rem;
+  padding: 0.55rem 0.75rem;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.55rem;
+  font: inherit;
+}
+.developer-controls button {
+  grid-column: 1 / -1;
+  cursor: pointer;
+  font-weight: 750;
+}
+.developer-controls button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+.developer-summary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 1.5rem 0;
+}
+.developer-summary div {
+  min-width: 0;
+  padding: 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.65rem;
+}
+.developer-summary dt {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+.developer-summary dd {
+  margin: 0.3rem 0 0;
+  overflow-wrap: anywhere;
+  font-weight: 750;
+}
+.developer-read-model {
+  min-height: 4rem;
+}
+.visibility-label {
+  margin: 0 0 1rem;
+}
+.context-sections {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+.context-sections section,
+.developer-read-model > section {
+  padding: 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.7rem;
+}
+.developer-read-model > section {
+  margin-top: 1rem;
+}
+.context-sections h3,
+.developer-read-model > section h3 {
+  margin: 0 0 0.75rem;
+  font-size: 1.05rem;
+}
+.developer-item-list {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding-left: 1.25rem;
+}
+.developer-item-list li {
+  line-height: 1.45;
+}
+.developer-item-list p {
+  margin: 0.25rem 0;
+}
+.developer-item-list small {
+  display: block;
+  color: var(--muted);
+}
+.developer-empty {
+  margin: 0;
+  color: var(--muted);
+}
+.developer-error {
+  margin: 0;
+  color: #662c1f;
+}
 .conversation-panel {
   display: grid;
   gap: 1.5rem;
@@ -199,6 +323,15 @@
   .simulator-layout {
     grid-template-columns: 1fr;
   }
+  .developer-heading {
+    display: grid;
+  }
+  .developer-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .context-sections {
+    grid-template-columns: 1fr;
+  }
   .visual-placeholder {
     min-height: 22rem;
   }
@@ -217,5 +350,15 @@
   }
   .connection-card small {
     grid-column: auto;
+  }
+  .developer-controls {
+    min-width: 0;
+    grid-template-columns: 1fr;
+  }
+  .developer-controls button {
+    grid-column: auto;
+  }
+  .developer-summary {
+    grid-template-columns: 1fr;
   }
 }

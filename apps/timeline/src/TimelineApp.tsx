@@ -1,30 +1,96 @@
-import { AppShell, formatStoryDate } from '@story-keeper/ui';
-import { timelineFixture } from './fixture.js';
+import {
+  resolveMcpEndpoint,
+  StoryKeeperClientError,
+  StoryKeeperMcpClient,
+  type StoryKeeperClient,
+} from '@story-keeper/mcp-client';
+import { storyKeeperDemoIds, type TimelineResponse } from '@story-keeper/shared';
+import { AppShell, TimelineView } from '@story-keeper/ui';
+import { useEffect, useRef, useState } from 'react';
 
-export function TimelineApp() {
+interface TimelineAppProps {
+  readonly createClient?: () => StoryKeeperClient;
+}
+
+export function TimelineApp({ createClient = createDefaultClient }: TimelineAppProps) {
+  const clientRef = useRef<StoryKeeperClient | null>(null);
+  if (clientRef.current === null) clientRef.current = createClient();
+  const client = clientRef.current;
+  const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const [timeline, setTimeline] = useState<TimelineResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(
+    () => () => {
+      void client.disconnect();
+    },
+    [client],
+  );
+
+  async function loadTimeline(): Promise<void> {
+    setStatus('loading');
+    setTimeline(null);
+    setError(null);
+    try {
+      await client.reconnect();
+      const result = await client.getTimeline({
+        familyId: storyKeeperDemoIds.familyId,
+        actorPersonId: storyKeeperDemoIds.mayaPersonId,
+      });
+      setTimeline(result);
+      setStatus('ready');
+    } catch (caught: unknown) {
+      setStatus('error');
+      setError(
+        caught instanceof StoryKeeperClientError
+          ? caught.message
+          : 'The family timeline could not be loaded. Try again.',
+      );
+    }
+  }
+
   return (
     <AppShell activeSurface="timeline">
       <header className="page-heading">
         <h1>Family timeline</h1>
         <p>Approved memories keep the date detail Rosa actually shared, including uncertainty.</p>
       </header>
-      <section className="surface-panel timeline-panel" aria-label="Rosa's timeline">
-        <ol className="timeline-list">
-          {timelineFixture.items.map((item) => (
-            <li key={item.id} data-precision={item.date.precision}>
-              <div className="timeline-marker" aria-hidden="true" />
-              <div>
-                <p className="timeline-date">{formatStoryDate(item.date)}</p>
-                <h2>{item.title}</h2>
-                <p>{item.description}</p>
-                <small>
-                  {item.sourceCount} {item.sourceCount === 1 ? 'source' : 'sources'}
-                </small>
-              </div>
-            </li>
-          ))}
-        </ol>
+      <section className="surface-panel timeline-panel" aria-labelledby="timeline-title">
+        <div className="timeline-actions">
+          <button
+            className="secondary-button"
+            type="button"
+            disabled={status === 'loading'}
+            onClick={() => void loadTimeline()}
+          >
+            {status === 'loading'
+              ? 'Loading…'
+              : status === 'ready'
+                ? 'Refresh timeline'
+                : 'Connect and load timeline'}
+          </button>
+          <p role="status" aria-live="polite">
+            {status === 'idle' ? 'Connect to load approved family events.' : null}
+            {status === 'loading' ? 'Loading the approved family timeline…' : null}
+            {status === 'ready' ? 'Timeline loaded from Story Keeper.' : null}
+          </p>
+        </div>
+        <h2 id="timeline-title">Approved family events</h2>
+        {error === null ? null : (
+          <p className="timeline-error" role="alert">
+            {error}
+          </p>
+        )}
+        {timeline === null || status !== 'ready' ? null : (
+          <TimelineView timeline={timeline} labelledBy="timeline-title" />
+        )}
       </section>
     </AppShell>
+  );
+}
+
+function createDefaultClient(): StoryKeeperClient {
+  return new StoryKeeperMcpClient(
+    resolveMcpEndpoint(import.meta.env.VITE_MCP_URL, window.location.href),
   );
 }

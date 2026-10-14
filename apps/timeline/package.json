@@ -10,6 +10,7 @@
     "typecheck": "tsc -b --pretty false"
   },
   "dependencies": {
+    "@story-keeper/mcp-client": "workspace:*",
     "@story-keeper/shared": "workspace:*",
     "@story-keeper/ui": "workspace:*",
     "react": "^19.2.0",

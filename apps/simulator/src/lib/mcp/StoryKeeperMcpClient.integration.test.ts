@@ -5,13 +5,21 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { storyKeeperDemoIds } from '@story-keeper/shared';
+import { STORY_KEEPER_TOOL_NAMES, StoryKeeperMcpClient } from '@story-keeper/mcp-client';
+import { MockStoryExtractionProvider } from '@story-keeper/bedrock';
+import {
+  DrizzleExtractionRepository,
+  DrizzleJobRepository,
+  DrizzleStoryMemoryRepository,
+  seedDemoShowcaseData,
+} from '@story-keeper/database';
+import { ExtractionWorker } from '@story-keeper/story-engine';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   startTestRuntime,
   type TestRuntime,
 } from '../../../../../packages/mcp-server/test/runtime.js';
-import { STORY_KEEPER_TOOL_NAMES, StoryKeeperMcpClient } from './StoryKeeperMcpClient.js';
 
 const clients: StoryKeeperMcpClient[] = [];
 const runtimes: TestRuntime[] = [];
@@ -31,6 +39,7 @@ describe('StoryKeeperMcpClient real server integration', () => {
     directories.push(directory);
     const runtime = await startTestRuntime(join(directory, 'interview.sqlite'));
     runtimes.push(runtime);
+    seedDemoShowcaseData(runtime.database);
 
     const firstClient = new StoryKeeperMcpClient(runtime.mcpUrl);
     clients.push(firstClient);
@@ -51,6 +60,93 @@ describe('StoryKeeperMcpClient real server integration', () => {
       interviewId: started.interviewId,
       questionId: started.questionId,
       rawText,
+    });
+    const memory = new DrizzleStoryMemoryRepository(runtime.database);
+    const worker = new ExtractionWorker(
+      new DrizzleJobRepository(runtime.database),
+      new DrizzleExtractionRepository(runtime.database),
+      memory,
+      new MockStoryExtractionProvider({
+        people: [],
+        relationships: [],
+        places: [],
+        dateMentions: [],
+        followUpCandidates: [],
+        events: [
+          {
+            subjectReference: 'narrator',
+            eventType: 'move',
+            title: 'Moved near the old market',
+            description: 'Rosa remembered moving near the market.',
+            date: { earliestYear: 1962, latestYear: 1964, precision: 'range' },
+            confidence: 0.9,
+          },
+        ],
+        factCandidates: [
+          {
+            subjectReference: 'narrator',
+            factType: 'move_year',
+            normalizedValue: '1962',
+            confidence: 0.9,
+            sourceLocator: null,
+          },
+        ],
+      }),
+      { workerId: 'phase-2-client-integration', retryDelayMs: 0 },
+    );
+    expect(await worker.processNext()).toBe('succeeded');
+    const left = memory.listFacts(storyKeeperDemoIds.familyId)[0];
+    const event = memory.listTimelineEvents(storyKeeperDemoIds.familyId)[0];
+    if (left === undefined || event === undefined)
+      throw new Error('Expected extracted test memory.');
+    const right = memory.createFactWithSource({
+      familyId: storyKeeperDemoIds.familyId,
+      subjectPersonId: storyKeeperDemoIds.rosaPersonId,
+      factType: 'move_year',
+      normalizedValue: '1964',
+      confidence: 0.9,
+      answerId: saved.answerId,
+    }).fact;
+    memory.createContradiction({
+      familyId: storyKeeperDemoIds.familyId,
+      type: 'fact_value',
+      leftFactId: left.id,
+      rightFactId: right.id,
+    });
+    runtime.privacyService.approveStoryItem(
+      storyKeeperDemoIds.familyId,
+      storyKeeperDemoIds.rosaPersonId,
+      'timeline_event',
+      event.id,
+      'approve',
+    );
+
+    const rosaContext = await firstClient.getStoryContext({
+      familyId: storyKeeperDemoIds.familyId,
+      actorPersonId: storyKeeperDemoIds.rosaPersonId,
+    });
+    expect(rosaContext.facts.map(({ value }) => value)).toEqual(['1962', '1964']);
+    const mayaContext = await firstClient.getStoryContext({
+      familyId: storyKeeperDemoIds.familyId,
+      actorPersonId: storyKeeperDemoIds.mayaPersonId,
+    });
+    expect(mayaContext.facts).toEqual([]);
+    expect(mayaContext.timelineEvents).toHaveLength(1);
+    await expect(
+      firstClient.listPendingConflicts({
+        familyId: storyKeeperDemoIds.familyId,
+        interviewId: started.interviewId,
+      }),
+    ).resolves.toMatchObject({ conflicts: [{ status: 'unresolved' }] });
+    await expect(
+      firstClient.getTimeline({
+        familyId: storyKeeperDemoIds.familyId,
+        actorPersonId: storyKeeperDemoIds.mayaPersonId,
+      }),
+    ).resolves.toMatchObject({
+      items: [
+        { title: 'Moved near the old market', status: 'approved', date: { precision: 'range' } },
+      ],
     });
     await firstClient.disconnect();
     clients.splice(clients.indexOf(firstClient), 1);
