@@ -1,0 +1,212 @@
+:root {
+  color: #251c18;
+  background: #f7f2ea;
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  --canvas: #f7f2ea;
+  --surface: #fffdf9;
+  --surface-muted: #eee7dc;
+  --ink: #251c18;
+  --muted: #685d56;
+  --border: #cfc3b6;
+  --accent: #aa4f35;
+  --accent-dark: #833923;
+  --sage: #53634e;
+  --focus: #1769aa;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background: var(--canvas);
+}
+button,
+select {
+  font: inherit;
+}
+button,
+select,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+a {
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 3px;
+}
+
+.story-app {
+  min-height: 100vh;
+}
+.story-header {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) auto;
+  gap: 0.75rem 2rem;
+  align-items: center;
+  padding: 1.25rem clamp(1rem, 4vw, 3rem);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.story-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.8rem;
+  width: fit-content;
+  text-decoration: none;
+  font-family: Georgia, serif;
+  font-size: clamp(1.75rem, 4vw, 2.65rem);
+  font-weight: 700;
+}
+.story-mark {
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border: 2px solid var(--accent);
+  border-radius: 0.7rem 0.7rem 0.25rem 0.25rem;
+  color: var(--accent);
+  font-family: inherit;
+  font-size: 0.85rem;
+}
+.story-context {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.75rem;
+}
+.story-field {
+  display: grid;
+  gap: 0.3rem;
+  min-width: 10rem;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+.story-field select {
+  min-height: 3rem;
+  padding: 0.55rem 2.4rem 0.55rem 0.8rem;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.65rem;
+  font-size: 1rem;
+}
+.advance-button {
+  align-self: end;
+  min-height: 3rem;
+  padding: 0.65rem 1.2rem;
+  color: #fff;
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 0.65rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+.advance-button:hover {
+  background: var(--accent-dark);
+}
+.day-status {
+  grid-column: 1 / -1;
+  justify-self: end;
+  min-height: 1.2em;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.surface-nav {
+  display: flex;
+  gap: clamp(0.25rem, 2vw, 1.5rem);
+  padding: 0 1rem;
+  overflow-x: auto;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.surface-nav a {
+  flex: 0 0 auto;
+  padding: 1rem 0.75rem 0.8rem;
+  border-bottom: 3px solid transparent;
+  color: var(--muted);
+  font-size: 1rem;
+  font-weight: 750;
+  text-decoration: none;
+}
+.surface-nav a[aria-current='page'] {
+  border-color: var(--accent);
+  color: var(--ink);
+}
+.story-main {
+  width: min(1120px, calc(100% - 2rem));
+  margin: 0 auto;
+  padding: clamp(1.5rem, 4vw, 3rem) 0 4rem;
+}
+.page-heading {
+  max-width: 48rem;
+  margin-bottom: 2rem;
+}
+.page-heading h1 {
+  margin: 0 0 0.55rem;
+  font-family: Georgia, serif;
+  font-size: clamp(2rem, 5vw, 3.35rem);
+  line-height: 1.05;
+}
+.page-heading p {
+  margin: 0;
+  color: var(--muted);
+  font-size: clamp(1rem, 2vw, 1.2rem);
+  line-height: 1.65;
+}
+.surface-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  box-shadow: 0 14px 35px rgb(66 43 31 / 8%);
+}
+.empty-copy {
+  color: var(--muted);
+  font-size: 1.05rem;
+  line-height: 1.65;
+}
+
+@media (max-width: 760px) {
+  .story-header {
+    grid-template-columns: 1fr;
+  }
+  .story-context {
+    justify-content: flex-start;
+  }
+  .day-status {
+    justify-self: start;
+  }
+}
+
+@media (max-width: 520px) {
+  .story-context {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+  .story-field {
+    min-width: 0;
+  }
+  .advance-button {
+    grid-column: 1 / -1;
+  }
+  .story-main {
+    width: min(100% - 1rem, 1120px);
+  }
+}

@@ -9,10 +9,11 @@
     "pnpm": ">=10"
   },
   "scripts": {
-    "build": "tsc -b --clean && tsc -b",
+    "build": "tsc -b --clean && tsc -b && corepack pnpm --filter \"./apps/**\" run build",
     "db:migrate": "node --conditions=development --env-file-if-exists=.env --import tsx packages/database/src/migrate-cli.ts",
     "db:seed": "node --conditions=development --env-file-if-exists=.env --import tsx packages/database/src/seed-cli.ts",
-    "dev": "node --conditions=development --env-file-if-exists=.env --import tsx packages/mcp-server/src/index.ts",
+    "dev": "corepack pnpm --parallel --filter @story-keeper/mcp-server --filter \"./apps/**\" run dev",
+    "dev:backend": "node --conditions=development --env-file-if-exists=.env --import tsx packages/mcp-server/src/index.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint . --max-warnings 0",
@@ -20,20 +21,29 @@
     "demo:smoke": "vitest run packages/mcp-server/test/backend-journey.e2e.test.ts",
     "test:performance": "node --conditions=development --import tsx packages/mcp-server/test/performance-smoke.ts",
     "test": "vitest run",
-    "typecheck": "tsc -b --pretty false && tsc -p tsconfig.tests.json --pretty false"
+    "typecheck": "tsc -b --pretty false && tsc -p tsconfig.tests.json --pretty false && corepack pnpm --filter \"./apps/**\" run typecheck"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/better-sqlite3": "^7.6.13",
     "@types/express": "^5.0.3",
     "@types/node": "^24.7.2",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.0",
+    "@vitejs/plugin-react": "^5.1.1",
     "@types/supertest": "^6.0.3",
     "eslint": "^10.12.0",
+    "happy-dom": "^20.0.11",
     "prettier": "^3.6.2",
     "supertest": "^7.1.4",
     "tsx": "^4.20.6",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.46.1",
-    "vitest": "^5.0.3"
+    "vite": "8.3.3",
+    "vitest": "^5.0.3",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
   }
 }

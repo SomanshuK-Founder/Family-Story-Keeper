@@ -1,0 +1,82 @@
+.simulator-layout {
+  display: grid;
+  grid-template-columns: 1.08fr 0.92fr;
+  gap: 1.25rem;
+}
+.conversation-placeholder,
+.visual-placeholder {
+  min-height: 25rem;
+  padding: clamp(1.5rem, 4vw, 2.5rem);
+}
+.conversation-placeholder {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.visual-placeholder {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  gap: 1.5rem;
+}
+.panel-label {
+  margin: 0 0 0.6rem;
+  color: var(--accent);
+  font-size: 0.85rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.surface-panel h2 {
+  margin: 0 0 0.6rem;
+  font-family: Georgia, serif;
+  font-size: clamp(1.6rem, 3vw, 2.25rem);
+}
+.message-placeholder {
+  display: grid;
+  gap: 0.7rem;
+  width: 75%;
+}
+.message-placeholder span {
+  display: block;
+  height: 0.8rem;
+  border-radius: 1rem;
+  background: var(--surface-muted);
+}
+.message-placeholder span:nth-child(2) {
+  width: 85%;
+}
+.message-placeholder span:nth-child(3) {
+  width: 62%;
+}
+.memory-window {
+  position: relative;
+  min-height: 14rem;
+  overflow: hidden;
+  border-radius: 0.8rem;
+  background: #d9dfcf;
+}
+.memory-window::before {
+  content: '';
+  position: absolute;
+  inset: 14% 18%;
+  border: 2px solid var(--sage);
+  border-bottom: 0;
+}
+.memory-window span {
+  position: absolute;
+  right: 22%;
+  bottom: 0;
+  width: 5rem;
+  height: 7rem;
+  border-radius: 50% 50% 0 0;
+  background: #7d8a70;
+}
+@media (max-width: 760px) {
+  .simulator-layout {
+    grid-template-columns: 1fr;
+  }
+  .conversation-placeholder,
+  .visual-placeholder {
+    min-height: 19rem;
+  }
+}

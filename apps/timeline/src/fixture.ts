@@ -1,0 +1,50 @@
+import { timelineResponseSchema, type TimelineResponse } from '@story-keeper/shared';
+
+export const timelineFixture: TimelineResponse = timelineResponseSchema.parse({
+  items: [
+    {
+      id: '1a000000-0000-4000-8000-000000000001',
+      eventType: 'birth',
+      title: 'Rosa was born',
+      description: "The beginning of Rosa's story.",
+      personId: '2a000000-0000-4000-8000-000000000001',
+      personDisplayName: 'Rosa',
+      date: { earliestYear: 1942, latestYear: 1942, precision: 'exact' },
+      status: 'approved',
+      sourceCount: 1,
+    },
+    {
+      id: '1a000000-0000-4000-8000-000000000002',
+      eventType: 'move',
+      title: 'Moved to a new neighborhood',
+      description: 'Rosa remembered moving while she was still young.',
+      personId: '2a000000-0000-4000-8000-000000000001',
+      personDisplayName: 'Rosa',
+      date: { earliestYear: 1955, latestYear: 1955, precision: 'approximate' },
+      status: 'approved',
+      sourceCount: 2,
+    },
+    {
+      id: '1a000000-0000-4000-8000-000000000003',
+      eventType: 'school',
+      title: 'Attended secondary school',
+      description: 'School years remembered as a range.',
+      personId: '2a000000-0000-4000-8000-000000000001',
+      personDisplayName: 'Rosa',
+      date: { earliestYear: 1958, latestYear: 1962, precision: 'range' },
+      status: 'approved',
+      sourceCount: 1,
+    },
+    {
+      id: '1a000000-0000-4000-8000-000000000004',
+      eventType: 'work',
+      title: 'First community role',
+      description: 'The year was not preserved in the source memory.',
+      personId: '2a000000-0000-4000-8000-000000000001',
+      personDisplayName: 'Rosa',
+      date: { earliestYear: null, latestYear: null, precision: 'unknown' },
+      status: 'approved',
+      sourceCount: 1,
+    },
+  ],
+});

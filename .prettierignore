@@ -1,6 +1,8 @@
 node_modules
 dist
 coverage
+.playwright-cli
+output/playwright
 pnpm-lock.yaml
 *.sqlite
 *.sqlite-*

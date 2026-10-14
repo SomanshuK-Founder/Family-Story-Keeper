@@ -2,6 +2,7 @@
   "files": [],
   "references": [
     { "path": "./packages/shared" },
+    { "path": "./packages/ui" },
     { "path": "./packages/database" },
     { "path": "./packages/story-engine" },
     { "path": "./packages/bedrock" },

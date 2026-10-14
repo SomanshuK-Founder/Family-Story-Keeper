@@ -16,4 +16,6 @@ data/
 .cache/
 .eslintcache
 .pnpm-store/
+.playwright-cli/
+output/playwright/
 *.log
