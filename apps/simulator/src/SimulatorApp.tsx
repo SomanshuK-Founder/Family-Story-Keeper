@@ -15,15 +15,30 @@ import {
   DeveloperMemoryInspector,
   type InspectorActor,
 } from './components/DeveloperMemoryInspector.js';
+import { PendingMemoryList } from './components/memory/PendingMemoryList.js';
+import { ProcessingStatus } from './components/memory/ProcessingStatus.js';
+import {
+  captureMemoryItemIds,
+  defaultMemoryProcessingTiming,
+  findNewPendingMemoryIds,
+  waitForProcessingInterval,
+  type MemoryItemIds,
+  type MemoryProcessingPhase,
+  type MemoryProcessingTiming,
+} from './features/memory/processing.js';
 
 type ConnectionStatus = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'error';
 type RequestStatus = 'idle' | 'starting' | 'saving';
 
 interface SimulatorAppProps {
   readonly createClient?: () => StoryKeeperClient;
+  readonly processingTiming?: MemoryProcessingTiming;
 }
 
-export function SimulatorApp({ createClient = createDefaultClient }: SimulatorAppProps) {
+export function SimulatorApp({
+  createClient = createDefaultClient,
+  processingTiming = defaultMemoryProcessingTiming,
+}: SimulatorAppProps) {
   const clientRef = useRef<StoryKeeperClient | null>(null);
   if (clientRef.current === null) clientRef.current = createClient();
   const client = clientRef.current;
@@ -44,10 +59,17 @@ export function SimulatorApp({ createClient = createDefaultClient }: SimulatorAp
   );
   const [inspectorError, setInspectorError] = useState<string | null>(null);
   const inspectorRequestRef = useRef(0);
+  const processingRunRef = useRef(0);
+  const processingAbortRef = useRef<AbortController | null>(null);
+  const processingBaselineRef = useRef<MemoryItemIds | null>(null);
+  const [processingPhase, setProcessingPhase] = useState<MemoryProcessingPhase>('idle');
+  const [newMemoryIds, setNewMemoryIds] = useState<ReadonlySet<string>>(new Set());
 
   useEffect(
     () => () => {
       inspectorRequestRef.current += 1;
+      processingRunRef.current += 1;
+      processingAbortRef.current?.abort();
       void client.disconnect();
     },
     [client],
@@ -55,6 +77,7 @@ export function SimulatorApp({ createClient = createDefaultClient }: SimulatorAp
 
   async function connect(): Promise<void> {
     const isReconnect = connectionStatus === 'connected' || connectionStatus === 'error';
+    cancelProcessing();
     inspectorRequestRef.current += 1;
     setStoryContext(null);
     setConflicts(null);
@@ -123,6 +146,11 @@ export function SimulatorApp({ createClient = createDefaultClient }: SimulatorAp
     setRequestStatus('saving');
     setError(null);
     setNotice('Saving your answer…');
+    const baseline =
+      inspectorActor === 'rosa' && storyContext?.actor.id === storyKeeperDemoIds.rosaPersonId
+        ? captureMemoryItemIds(storyContext)
+        : null;
+    const processingContextId = processingRunRef.current;
     try {
       await client.saveAnswer({
         familyId: storyKeeperDemoIds.familyId,
@@ -130,19 +158,92 @@ export function SimulatorApp({ createClient = createDefaultClient }: SimulatorAp
         questionId: question.questionId,
         rawText: answer,
       });
-      setAnswer('');
-      setNotice('Answer saved. Your memory is safely stored.');
+    } catch (caught: unknown) {
+      showError(caught, 'Your answer could not be saved. It remains in the answer box.');
+      setRequestStatus('idle');
+      return;
+    }
+
+    setAnswer('');
+    setNotice('Answer saved. Story Keeper is organizing the memory.');
+    inspectorRequestRef.current += 1;
+    if (processingRunRef.current === processingContextId && inspectorActor === 'rosa') {
+      void beginProcessingRefresh(baseline);
+    }
+
+    try {
       const nextQuestion = await client.getNextQuestion({
         familyId: storyKeeperDemoIds.familyId,
         interviewId: question.interviewId,
       });
       setQuestion(nextQuestion);
-      await loadInspector(inspectorActor, question.interviewId);
     } catch (caught: unknown) {
-      showError(caught, 'Your answer could not be saved. It remains in the answer box.');
+      setError({
+        code: caught instanceof StoryKeeperClientError ? caught.code : 'next_question_unavailable',
+        message: 'Your answer was saved, but the next question could not be loaded.',
+      });
     } finally {
       setRequestStatus('idle');
     }
+  }
+
+  async function beginProcessingRefresh(baseline: MemoryItemIds | null): Promise<void> {
+    processingAbortRef.current?.abort();
+    const controller = new AbortController();
+    processingAbortRef.current = controller;
+    const runId = processingRunRef.current + 1;
+    processingRunRef.current = runId;
+    processingBaselineRef.current = baseline;
+    setNewMemoryIds(new Set());
+    setProcessingPhase('processing');
+
+    for (let attempt = 0; attempt < processingTiming.maxAttempts; attempt += 1) {
+      const shouldContinue = await waitForProcessingInterval(
+        processingTiming.pollIntervalMs,
+        controller.signal,
+      );
+      if (!shouldContinue || processingRunRef.current !== runId) return;
+
+      try {
+        const nextContext = await client.getStoryContext({
+          familyId: storyKeeperDemoIds.familyId,
+          actorPersonId: storyKeeperDemoIds.rosaPersonId,
+        });
+        if (controller.signal.aborted || processingRunRef.current !== runId) return;
+
+        setStoryContext(nextContext);
+        setInspectorStatus('ready');
+        setInspectorError(null);
+        if (processingBaselineRef.current === null) {
+          processingBaselineRef.current = captureMemoryItemIds(nextContext);
+          continue;
+        }
+
+        const addedIds = findNewPendingMemoryIds(nextContext, processingBaselineRef.current);
+        if (addedIds.size > 0) {
+          setNewMemoryIds(addedIds);
+          setProcessingPhase('available');
+          return;
+        }
+      } catch {
+        if (controller.signal.aborted || processingRunRef.current !== runId) return;
+        setProcessingPhase('unavailable');
+        return;
+      }
+    }
+
+    if (!controller.signal.aborted && processingRunRef.current === runId) {
+      setProcessingPhase('delayed');
+    }
+  }
+
+  function cancelProcessing(): void {
+    processingRunRef.current += 1;
+    processingAbortRef.current?.abort();
+    processingAbortRef.current = null;
+    processingBaselineRef.current = null;
+    setProcessingPhase('idle');
+    setNewMemoryIds(new Set());
   }
 
   async function loadInspector(
@@ -187,7 +288,13 @@ export function SimulatorApp({ createClient = createDefaultClient }: SimulatorAp
   }
 
   function changeInspectorActor(actor: InspectorActor): void {
+    cancelProcessing();
     setInspectorActor(actor);
+    setNotice(
+      actor === 'rosa'
+        ? 'Viewing Rosa’s narrator memory.'
+        : 'Viewing Maya’s approved family memory.',
+    );
     void loadInspector(actor, interviewId);
   }
 
@@ -311,6 +418,10 @@ export function SimulatorApp({ createClient = createDefaultClient }: SimulatorAp
           <p className="save-status" role="status" aria-live="polite">
             {notice}
           </p>
+          <ProcessingStatus
+            phase={processingPhase}
+            onCheckAgain={() => void beginProcessingRefresh(processingBaselineRef.current)}
+          />
         </section>
 
         <aside className="surface-panel visual-placeholder" aria-labelledby="visual-title">
@@ -326,6 +437,15 @@ export function SimulatorApp({ createClient = createDefaultClient }: SimulatorAp
           </div>
         </aside>
       </div>
+
+      {inspectorActor === 'rosa' ? (
+        <PendingMemoryList
+          context={storyContext}
+          highlightedIds={newMemoryIds}
+          connected={isConnected}
+          loading={inspectorStatus === 'loading'}
+        />
+      ) : null}
 
       <DeveloperMemoryInspector
         actor={inspectorActor}

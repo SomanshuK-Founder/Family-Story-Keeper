@@ -12,11 +12,12 @@ test('Rosa completes a real MCP interview turn and resumes it after reload', asy
   await page.getByRole('button', { name: 'Connect' }).focus();
   await page.keyboard.press('Enter');
   await expect(page.getByText('15 tools verified')).toBeVisible();
-  await expect(page.getByText('The private garden')).toBeVisible();
+  await expect(page.getByText('The private garden', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Start / Resume interview' }).focus();
   await page.keyboard.press('Enter');
-  await expect(page.getByText(/Favorite place: The private garden/)).toBeVisible();
-  await expect(page.getByText(/Favorite place: The old market square/)).toBeVisible();
+  const developerInspector = page.locator('.developer-inspector');
+  await expect(developerInspector.getByText(/Favorite place: The private garden/)).toBeVisible();
+  await expect(developerInspector.getByText(/Favorite place: The old market square/)).toBeVisible();
   const firstQuestion = await page.locator('.current-question').textContent();
   expect(firstQuestion).toBeTruthy();
 
@@ -25,9 +26,23 @@ test('Rosa completes a real MCP interview turn and resumes it after reload', asy
   await page.keyboard.type(rawAnswer);
   await page.getByRole('button', { name: 'Submit answer' }).focus();
   await page.keyboard.press('Enter');
-  await expect(page.getByText('Answer saved. Your memory is safely stored.')).toBeVisible();
+  await expect(page.getByText('Your answer was saved.')).toBeVisible();
+  await expect(
+    page.getByText('Story Keeper is organizing the memory.', { exact: true }),
+  ).toBeVisible();
   await expect(page.getByLabel('Rosa’s answer')).toHaveValue('');
   await expect(page.getByText(rawAnswer, { exact: true })).not.toBeVisible();
+  await expect(page.getByText('New structured memory is ready.')).toBeVisible();
+  const pendingMemory = page.getByRole('region', { name: 'Memories waiting for review' });
+  await expect(pendingMemory.getByText('The garden gate in the evening breeze')).toBeVisible();
+  await expect(pendingMemory.getByRole('heading', { name: 'Child relationship' })).toBeVisible();
+  await expect(
+    pendingMemory.getByRole('heading', { name: 'Evenings by the garden gate' }),
+  ).toBeVisible();
+  await expect(pendingMemory.getByText('Around 1974')).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
   const nextQuestion = await page.locator('.current-question').textContent();
   expect(nextQuestion).toBeTruthy();
   expect(nextQuestion).not.toBe(firstQuestion);
@@ -46,6 +61,8 @@ test('Rosa completes a real MCP interview turn and resumes it after reload', asy
   expect(browserPersistence.url).not.toContain(encodeURIComponent(rawAnswer));
 
   await page.getByLabel('Inspect memory as').selectOption('maya');
+  await expect(page.getByText('Viewing Maya’s approved family memory.')).toBeVisible();
+  await expect(page.getByText(/organizing the memory/i)).not.toBeVisible();
   await expect(page.getByText('The private garden')).not.toBeVisible();
   await expect(page.getByText(/Viewing as/)).toContainText('Maya');
   await expect(page.getByText(/Approved family view/)).toBeVisible();

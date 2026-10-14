@@ -19,6 +19,7 @@ import {
   InterviewService,
   NarratorMemoryService,
   PrivacyService,
+  startExtractionWorkerLoop,
 } from '../../../packages/story-engine/src/index.js';
 import { storyKeeperDemoIds } from '../../../packages/shared/src/index.js';
 
@@ -109,3 +110,57 @@ new PrivacyService(new DrizzlePrivacyRepository(database), narratorMemory).appro
 database.close();
 
 await import('../../../packages/mcp-server/src/index.js');
+
+const processingDatabase = createDatabase(databasePath);
+const processingJobs = new DrizzleJobRepository(processingDatabase);
+const processingLoop = startExtractionWorkerLoop(
+  new ExtractionWorker(
+    processingJobs,
+    new DrizzleExtractionRepository(processingDatabase),
+    new DrizzleStoryMemoryRepository(processingDatabase),
+    new MockStoryExtractionProvider({
+      people: [],
+      relationships: [
+        {
+          fromReference: 'narrator',
+          toReference: `person:${storyKeeperDemoIds.mayaPersonId}`,
+          relationshipType: 'child',
+          confidence: 0.95,
+        },
+      ],
+      places: [],
+      dateMentions: [],
+      followUpCandidates: [],
+      factCandidates: [
+        {
+          subjectReference: 'narrator',
+          factType: 'garden_sound',
+          normalizedValue: 'The garden gate in the evening breeze',
+          confidence: 0.96,
+          sourceLocator: null,
+        },
+      ],
+      events: [
+        {
+          subjectReference: 'narrator',
+          eventType: 'garden_memory',
+          title: 'Evenings by the garden gate',
+          description: 'Rosa remembered the garden gate moving in the evening breeze.',
+          date: { earliestYear: 1974, latestYear: 1974, precision: 'approximate' },
+          confidence: 0.92,
+        },
+      ],
+    }),
+    { workerId: 'phase-3-browser-processing', retryDelayMs: 0 },
+  ),
+  processingJobs,
+  { pollIntervalMs: 500, lockTimeoutMs: 60_000 },
+);
+
+async function stopProcessingHarness(): Promise<void> {
+  await processingLoop.stop();
+  processingDatabase.close();
+}
+
+process.once('SIGINT', () => void stopProcessingHarness());
+process.once('SIGTERM', () => void stopProcessingHarness());

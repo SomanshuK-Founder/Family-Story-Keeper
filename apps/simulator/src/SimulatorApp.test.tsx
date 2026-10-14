@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type {
   GetStoryContextResult,
@@ -45,6 +45,22 @@ const mayaContext: GetStoryContextResult = {
   timelineEvents: [],
   chapters: [],
   conflicts: [],
+};
+
+const newRosaContext: GetStoryContextResult = {
+  ...rosaContext,
+  facts: [
+    ...rosaContext.facts,
+    {
+      id: '20000000-0000-4000-8000-000000000003',
+      subjectPersonId: storyKeeperDemoIds.rosaPersonId,
+      factType: 'garden_sound',
+      value: 'The garden gate squeaked in the evening breeze.',
+      confidence: 0.94,
+      status: 'pending',
+      sourceCount: 1,
+    },
+  ],
 };
 
 const rosaConflicts: ListPendingConflictsResult = {
@@ -190,6 +206,131 @@ describe('SimulatorApp', () => {
     expect(client.saveAnswer).toHaveBeenCalledTimes(1);
     finishSave?.();
     await waitFor(() => expect(screen.getByLabelText('Rosa’s answer')).toHaveValue(''));
+  });
+
+  it('distinguishes a saved answer from later structured-memory availability', async () => {
+    let answerSaved = false;
+    let checksAfterSave = 0;
+    const client = createClient();
+    client.saveAnswer = vi.fn<StoryKeeperClient['saveAnswer']>(() => {
+      answerSaved = true;
+      return Promise.resolve({ answerId, status: 'saved' });
+    });
+    client.getStoryContext = vi.fn<StoryKeeperClient['getStoryContext']>(({ actorPersonId }) => {
+      if (actorPersonId === mayaContext.actor.id) return Promise.resolve(mayaContext);
+      if (!answerSaved) return Promise.resolve(rosaContext);
+      checksAfterSave += 1;
+      return Promise.resolve(checksAfterSave < 2 ? rosaContext : newRosaContext);
+    });
+    render(
+      <SimulatorApp
+        createClient={() => client}
+        processingTiming={{ pollIntervalMs: 1, maxAttempts: 3 }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    await screen.findByText('15 tools verified');
+    fireEvent.click(screen.getByRole('button', { name: 'Start / Resume interview' }));
+    await screen.findByText('What do you remember about your childhood street?', {
+      selector: '.current-question',
+    });
+    fireEvent.change(screen.getByLabelText('Rosa’s answer'), {
+      target: { value: 'The gate squeaked in the breeze.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Submit answer' }));
+
+    expect(await screen.findByText('Your answer was saved.')).toBeInTheDocument();
+    expect(screen.getByText('Story Keeper is organizing the memory.')).toBeInTheDocument();
+    expect(screen.queryByText('New structured memory is ready.')).not.toBeInTheDocument();
+
+    expect(await screen.findByText('New structured memory is ready.')).toBeInTheDocument();
+    const productRegion = screen.getByRole('region', { name: 'Memories waiting for review' });
+    expect(
+      within(productRegion).getByText('The garden gate squeaked in the evening breeze.'),
+    ).toBeInTheDocument();
+    expect(client.saveAnswer).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the answer saved when bounded processing checks find no new memory', async () => {
+    const client = createClient();
+    render(
+      <SimulatorApp
+        createClient={() => client}
+        processingTiming={{ pollIntervalMs: 1, maxAttempts: 2 }}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    await screen.findByText('15 tools verified');
+    fireEvent.click(screen.getByRole('button', { name: 'Start / Resume interview' }));
+    await screen.findByText('What do you remember about your childhood street?', {
+      selector: '.current-question',
+    });
+    fireEvent.change(screen.getByLabelText('Rosa’s answer'), {
+      target: { value: 'A memory that will be organized later.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Submit answer' }));
+
+    expect(await screen.findByText('Your answer is safely saved.')).toBeInTheDocument();
+    expect(
+      screen.getByText('Story Keeper is still organizing it in the background.'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Check again' })).toBeInTheDocument();
+    expect(client.saveAnswer).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancels a Rosa processing refresh before a late response can reach Maya', async () => {
+    let answerSaved = false;
+    let resolveLateRosa: ((context: GetStoryContextResult) => void) | undefined;
+    const client = createClient();
+    client.saveAnswer = vi.fn<StoryKeeperClient['saveAnswer']>(() => {
+      answerSaved = true;
+      return Promise.resolve({ answerId, status: 'saved' });
+    });
+    client.getStoryContext = vi.fn<StoryKeeperClient['getStoryContext']>(({ actorPersonId }) => {
+      if (actorPersonId === mayaContext.actor.id) return Promise.resolve(mayaContext);
+      if (!answerSaved) return Promise.resolve(rosaContext);
+      return new Promise((resolve) => {
+        resolveLateRosa = resolve;
+      });
+    });
+    render(
+      <SimulatorApp
+        createClient={() => client}
+        processingTiming={{ pollIntervalMs: 1, maxAttempts: 2 }}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    await screen.findByText('15 tools verified');
+    fireEvent.click(screen.getByRole('button', { name: 'Start / Resume interview' }));
+    await screen.findByText('What do you remember about your childhood street?', {
+      selector: '.current-question',
+    });
+    fireEvent.change(screen.getByLabelText('Rosa’s answer'), {
+      target: { value: 'A private garden memory.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Submit answer' }));
+    await screen.findByText('Your answer was saved.');
+    await waitFor(() => {
+      expect(resolveLateRosa).toBeTypeOf('function');
+    });
+
+    fireEvent.change(screen.getByLabelText('Inspect memory as'), { target: { value: 'maya' } });
+    expect(screen.queryByText('Your answer was saved.')).not.toBeInTheDocument();
+    expect(screen.queryByText(/organizing the memory/i)).not.toBeInTheDocument();
+    expect(screen.getByText('Viewing Maya’s approved family memory.')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('region', { name: 'Memories waiting for review' }),
+    ).not.toBeInTheDocument();
+    resolveLateRosa?.(newRosaContext);
+
+    expect(
+      await screen.findByText('No structured story items are visible to Maya.'),
+    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByText(/garden gate squeaked/i)).not.toBeInTheDocument();
+      expect(screen.queryByText('New structured memory is ready.')).not.toBeInTheDocument();
+    });
   });
 
   it('shows a controlled connection error with no mock interview fallback', async () => {
