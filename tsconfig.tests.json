@@ -3,5 +3,5 @@
   "compilerOptions": {
     "noEmit": true
   },
-  "include": ["packages/**/test/**/*.ts"]
+  "include": ["packages/**/test/**/*.ts", "apps/**/*.integration.test.ts"]
 }

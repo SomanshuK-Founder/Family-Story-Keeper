@@ -1,22 +1,64 @@
+.simulator-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 2rem;
+  max-width: none;
+}
+.connection-card {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 0.5rem 0.8rem;
+  align-items: center;
+  align-self: start;
+  min-width: 15rem;
+  padding: 0.9rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.8rem;
+}
+.connection-card small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+}
+.connection-state {
+  display: inline-flex;
+  gap: 0.55rem;
+  align-items: center;
+  margin: 0;
+  font-weight: 750;
+}
+.connection-state span {
+  width: 0.7rem;
+  height: 0.7rem;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+}
+.connection-state[data-state='connected'] {
+  color: var(--sage);
+}
+.connection-state[data-state='error'] {
+  color: var(--accent-dark);
+}
 .simulator-layout {
   display: grid;
-  grid-template-columns: 1.08fr 0.92fr;
+  grid-template-columns: minmax(0, 1.25fr) minmax(18rem, 0.75fr);
   gap: 1.25rem;
 }
-.conversation-placeholder,
+.conversation-panel,
 .visual-placeholder {
-  min-height: 25rem;
-  padding: clamp(1.5rem, 4vw, 2.5rem);
+  min-height: 30rem;
+  padding: clamp(1.25rem, 3vw, 2.25rem);
 }
-.conversation-placeholder {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-}
-.visual-placeholder {
+.conversation-panel {
   display: grid;
-  grid-template-rows: 1fr auto;
   gap: 1.5rem;
+}
+.conversation-topline,
+.answer-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
 }
 .panel-label {
   margin: 0 0 0.6rem;
@@ -31,22 +73,98 @@
   font-family: Georgia, serif;
   font-size: clamp(1.6rem, 3vw, 2.25rem);
 }
-.message-placeholder {
+.primary-button,
+.secondary-button {
+  min-height: 3rem;
+  padding: 0.7rem 1rem;
+  border-radius: 0.65rem;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+.primary-button {
+  color: #fff;
+  background: var(--accent);
+  border: 1px solid var(--accent);
+}
+.secondary-button {
+  color: var(--accent-dark);
+  background: var(--surface);
+  border: 1px solid var(--accent);
+}
+.primary-button:hover,
+.primary-button:focus-visible {
+  background: var(--accent-dark);
+}
+.primary-button:disabled,
+.secondary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+.question-region {
+  min-height: 10rem;
+  padding: clamp(1.2rem, 3vw, 2rem);
+  background: #f6eee3;
+  border-left: 5px solid var(--accent);
+  border-radius: 0.8rem;
+}
+.current-question {
+  max-width: 32ch;
+  margin: 0;
+  font-family: Georgia, serif;
+  font-size: clamp(1.45rem, 3vw, 2.1rem);
+  line-height: 1.35;
+}
+.answer-form {
   display: grid;
-  gap: 0.7rem;
-  width: 75%;
+  gap: 0.65rem;
 }
-.message-placeholder span {
-  display: block;
-  height: 0.8rem;
-  border-radius: 1rem;
-  background: var(--surface-muted);
+.answer-form label {
+  font-size: 1.05rem;
+  font-weight: 800;
 }
-.message-placeholder span:nth-child(2) {
-  width: 85%;
+.answer-form textarea {
+  width: 100%;
+  min-height: 8.5rem;
+  resize: vertical;
+  padding: 1rem;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.7rem;
+  font: inherit;
+  font-size: 1.08rem;
+  line-height: 1.55;
 }
-.message-placeholder span:nth-child(3) {
-  width: 62%;
+.answer-actions {
+  align-items: center;
+}
+.answer-actions span,
+.save-status {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+.save-status {
+  min-height: 1.4rem;
+  margin: 0;
+}
+.error-banner {
+  display: grid;
+  gap: 0.3rem;
+  margin: 0 0 1.25rem;
+  padding: 1rem 1.2rem;
+  color: #662c1f;
+  background: #fff1eb;
+  border: 1px solid #d99c88;
+  border-radius: 0.8rem;
+}
+.error-banner small {
+  color: #744c40;
+}
+.visual-placeholder {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  gap: 1.5rem;
 }
 .memory-window {
   position: relative;
@@ -71,12 +189,33 @@
   border-radius: 50% 50% 0 0;
   background: #7d8a70;
 }
-@media (max-width: 760px) {
+@media (max-width: 900px) {
+  .simulator-heading {
+    display: grid;
+  }
+  .connection-card {
+    width: min(100%, 25rem);
+  }
   .simulator-layout {
     grid-template-columns: 1fr;
   }
-  .conversation-placeholder,
   .visual-placeholder {
-    min-height: 19rem;
+    min-height: 22rem;
+  }
+}
+@media (max-width: 620px) {
+  .conversation-topline,
+  .answer-actions {
+    display: grid;
+  }
+  .primary-button,
+  .secondary-button {
+    width: 100%;
+  }
+  .connection-card {
+    grid-template-columns: 1fr;
+  }
+  .connection-card small {
+    grid-column: auto;
   }
 }

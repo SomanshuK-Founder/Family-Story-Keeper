@@ -5,6 +5,7 @@ export {
   type ExtractionProviderConfig,
 } from './config.js';
 export { maximumRawAnswerLength } from './limits.js';
+export { storyKeeperDemoIds } from './demo.js';
 export {
   chapterDraftStatuses,
   chapterDraftStatusSchema,
