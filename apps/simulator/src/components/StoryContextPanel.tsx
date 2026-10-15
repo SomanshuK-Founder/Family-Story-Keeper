@@ -6,8 +6,12 @@ interface StoryContextPanelProps {
 }
 
 export function StoryContextPanel({ context }: StoryContextPanelProps) {
+  const identities = context.personIdentities ?? [];
   const itemCount =
-    context.facts.length + context.relationships.length + context.timelineEvents.length;
+    identities.length +
+    context.facts.length +
+    context.relationships.length +
+    context.timelineEvents.length;
   if (itemCount === 0) {
     return (
       <p className="developer-empty">
@@ -18,6 +22,24 @@ export function StoryContextPanel({ context }: StoryContextPanelProps) {
 
   return (
     <div className="context-sections">
+      <ContextSection title="Identity references" empty={identities.length === 0}>
+        {identities.map((identity) => (
+          <li key={identity.personId}>
+            <strong>
+              {identity.status === 'confirmed'
+                ? identity.displayName
+                : identity.extractedDisplayName}
+            </strong>
+            <small>
+              {identity.status === 'confirmed'
+                ? 'Confirmed person'
+                : identity.possibleMatchDisplayName === null
+                  ? 'Unresolved · no confirmed match selected'
+                  : `Unresolved · possible match: ${identity.possibleMatchDisplayName}`}
+            </small>
+          </li>
+        ))}
+      </ContextSection>
       <ContextSection title="Facts" empty={context.facts.length === 0}>
         {context.facts.map((fact) => (
           <li key={fact.id}>

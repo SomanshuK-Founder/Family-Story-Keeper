@@ -16,10 +16,24 @@ const interviewId = '10000000-0000-4000-8000-000000000001';
 const firstQuestionId = '10000000-0000-4000-8000-000000000002';
 const secondQuestionId = '10000000-0000-4000-8000-000000000003';
 const answerId = '10000000-0000-4000-8000-000000000004';
+const privateCandidatePersonId = '10000000-0000-4000-8000-000000000005';
 
 const rosaContext: GetStoryContextResult = {
   actor: { id: storyKeeperDemoIds.rosaPersonId, displayName: 'Rosa', role: 'narrator' },
   visibility: 'narrator_review',
+  personIdentities: [
+    {
+      personId: storyKeeperDemoIds.rosaPersonId,
+      status: 'confirmed',
+      displayName: 'Rosa',
+    },
+    {
+      personId: privateCandidatePersonId,
+      status: 'unresolved',
+      extractedDisplayName: 'Private Raj',
+      possibleMatchDisplayName: 'Raj Sharma',
+    },
+  ],
   facts: [
     {
       id: '20000000-0000-4000-8000-000000000001',
@@ -40,6 +54,7 @@ const rosaContext: GetStoryContextResult = {
 const mayaContext: GetStoryContextResult = {
   actor: { id: storyKeeperDemoIds.mayaPersonId, displayName: 'Maya', role: 'relative' },
   visibility: 'approved_family',
+  personIdentities: [],
   facts: [],
   relationships: [],
   timelineEvents: [],
@@ -322,6 +337,9 @@ describe('SimulatorApp', () => {
     expect(
       screen.queryByRole('region', { name: 'Memories waiting for review' }),
     ).not.toBeInTheDocument();
+    expect(screen.queryByText('Private Raj')).not.toBeInTheDocument();
+    expect(screen.queryByText('Raj Sharma')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Supported by .* interview source/)).not.toBeInTheDocument();
     resolveLateRosa?.(newRosaContext);
 
     expect(
@@ -329,6 +347,8 @@ describe('SimulatorApp', () => {
     ).toBeInTheDocument();
     await waitFor(() => {
       expect(screen.queryByText(/garden gate squeaked/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Private Raj|Raj Sharma/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Supported by .* interview source/)).not.toBeInTheDocument();
       expect(screen.queryByText('New structured memory is ready.')).not.toBeInTheDocument();
     });
   });
@@ -422,6 +442,8 @@ describe('SimulatorApp', () => {
     fireEvent.change(screen.getByLabelText('Inspect memory as'), { target: { value: 'maya' } });
 
     expect(screen.queryByText(/The private garden/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Private Raj|Raj Sharma/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Supported by .* interview source/)).not.toBeInTheDocument();
     expect(
       await screen.findByText('No structured story items are visible to Maya.'),
     ).toBeInTheDocument();
@@ -437,7 +459,7 @@ describe('SimulatorApp', () => {
         screen.getByText('No structured story items are visible to Maya.'),
       ).toBeInTheDocument();
       expect(
-        screen.queryByText(/The private garden|The private courtyard/),
+        screen.queryByText(/The private garden|The private courtyard|Private Raj|Raj Sharma/),
       ).not.toBeInTheDocument();
       expect(
         screen.getByText('Conflict review is available only in narrator mode.'),

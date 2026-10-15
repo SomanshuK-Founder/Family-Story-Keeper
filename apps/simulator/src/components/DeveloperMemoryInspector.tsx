@@ -31,6 +31,11 @@ export function DeveloperMemoryInspector({
   onRefresh,
 }: DeveloperMemoryInspectorProps) {
   const pendingCount = context === null ? null : countPending(context);
+  const unresolvedPeopleCount =
+    context === null
+      ? null
+      : (context.personIdentities ?? []).filter((identity) => identity.status === 'unresolved')
+          .length;
   return (
     <aside className="developer-inspector" aria-labelledby="developer-inspector-title">
       <div className="developer-heading">
@@ -78,6 +83,10 @@ export function DeveloperMemoryInspector({
         <div>
           <dt>Pending conflicts</dt>
           <dd>{conflicts?.length ?? '—'}</dd>
+        </div>
+        <div>
+          <dt>People to clarify</dt>
+          <dd>{unresolvedPeopleCount ?? '—'}</dd>
         </div>
       </dl>
 

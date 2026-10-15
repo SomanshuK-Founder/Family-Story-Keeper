@@ -14,6 +14,7 @@ export type MemoryProcessingPhase = 'idle' | 'processing' | 'available' | 'delay
 
 export interface MemoryItemIds {
   readonly facts: ReadonlySet<string>;
+  readonly unresolvedPeople: ReadonlySet<string>;
   readonly relationships: ReadonlySet<string>;
   readonly timelineEvents: ReadonlySet<string>;
 }
@@ -21,6 +22,11 @@ export interface MemoryItemIds {
 export function captureMemoryItemIds(context: GetStoryContextResult): MemoryItemIds {
   return {
     facts: new Set(context.facts.map((item) => item.id)),
+    unresolvedPeople: new Set(
+      (context.personIdentities ?? [])
+        .filter((identity) => identity.status === 'unresolved')
+        .map((identity) => identity.personId),
+    ),
     relationships: new Set(context.relationships.map((item) => item.id)),
     timelineEvents: new Set(context.timelineEvents.map((item) => item.id)),
   };
@@ -34,6 +40,12 @@ export function findNewPendingMemoryIds(
     ...context.facts
       .filter((item) => item.status === 'pending' && !baseline.facts.has(item.id))
       .map((item) => item.id),
+    ...(context.personIdentities ?? [])
+      .filter(
+        (identity) =>
+          identity.status === 'unresolved' && !baseline.unresolvedPeople.has(identity.personId),
+      )
+      .map((identity) => identity.personId),
     ...context.relationships
       .filter((item) => item.status === 'pending' && !baseline.relationships.has(item.id))
       .map((item) => item.id),

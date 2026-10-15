@@ -10,6 +10,7 @@ import {
   DrizzlePrivacyRepository,
   DrizzleStoryMemoryRepository,
   runMigrations,
+  schema,
   seedDemoShowcaseData,
 } from '../../../packages/database/src/index.js';
 import { MockStoryExtractionProvider } from '../../../packages/bedrock/src/index.js';
@@ -31,6 +32,33 @@ for (const suffix of ['', '-shm', '-wal']) rmSync(`${databasePath}${suffix}`, { 
 const database = createDatabase(databasePath);
 runMigrations(database);
 seedDemoShowcaseData(database);
+const now = new Date();
+const knownRajPersonId = '00000000-0000-4000-8000-000000000008';
+database.db.transaction((transaction) => {
+  transaction
+    .insert(schema.people)
+    .values({
+      id: knownRajPersonId,
+      familyId: storyKeeperDemoIds.familyId,
+      canonicalDisplayName: 'Raj',
+      status: 'active',
+      createdAt: now,
+      updatedAt: now,
+    })
+    .run();
+  transaction
+    .insert(schema.familyMemberships)
+    .values({
+      id: '00000000-0000-4000-8000-000000000009',
+      familyId: storyKeeperDemoIds.familyId,
+      personId: knownRajPersonId,
+      role: 'relative',
+      status: 'active',
+      createdAt: now,
+      updatedAt: now,
+    })
+    .run();
+});
 const interviews = new DrizzleInterviewRepository(database);
 const narratorMemory = new DrizzleNarratorMemoryRepository(database);
 const interviewService = new InterviewService(
@@ -119,13 +147,22 @@ const processingLoop = startExtractionWorkerLoop(
     new DrizzleExtractionRepository(processingDatabase),
     new DrizzleStoryMemoryRepository(processingDatabase),
     new MockStoryExtractionProvider({
-      people: [],
+      people: [
+        { reference: 'raj', displayName: 'Raj', confidence: 1 },
+        { reference: 'devika', displayName: 'Devika', confidence: 1 },
+      ],
       relationships: [
         {
           fromReference: 'narrator',
           toReference: `person:${storyKeeperDemoIds.mayaPersonId}`,
           relationshipType: 'child',
           confidence: 0.95,
+        },
+        {
+          fromReference: 'narrator',
+          toReference: 'raj',
+          relationshipType: 'sibling',
+          confidence: 0.92,
         },
       ],
       places: [],
@@ -151,7 +188,7 @@ const processingLoop = startExtractionWorkerLoop(
         },
       ],
     }),
-    { workerId: 'phase-3-browser-processing', retryDelayMs: 0 },
+    { workerId: 'phase-4-browser-processing', retryDelayMs: 0 },
   ),
   processingJobs,
   { pollIntervalMs: 500, lockTimeoutMs: 60_000 },

@@ -2,13 +2,20 @@ import { expect, test } from '@playwright/test';
 
 test.use({ viewport: { width: 820, height: 900 } });
 
-test('Rosa completes a real MCP interview turn and resumes it after reload', async ({ page }) => {
+test('Rosa sees provenance and unresolved identity without leaking either to Maya', async ({
+  page,
+}, testInfo) => {
   const consoleErrors: string[] = [];
   page.on('console', (message) => {
     if (message.type() === 'error') consoleErrors.push(message.text());
   });
 
   await page.goto('/');
+  await expect(page).toHaveTitle('Story Keeper Simulator');
+  await expect(
+    page.getByRole('heading', { name: 'Talk with Story Keeper', level: 1 }),
+  ).toBeVisible();
+  await expect(page.locator('vite-error-overlay')).toHaveCount(0);
   await page.getByRole('button', { name: 'Connect' }).focus();
   await page.keyboard.press('Enter');
   await expect(page.getByText('15 tools verified')).toBeVisible();
@@ -35,11 +42,42 @@ test('Rosa completes a real MCP interview turn and resumes it after reload', asy
   await expect(page.getByText('New structured memory is ready.')).toBeVisible();
   const pendingMemory = page.getByRole('region', { name: 'Memories waiting for review' });
   await expect(pendingMemory.getByText('The garden gate in the evening breeze')).toBeVisible();
-  await expect(pendingMemory.getByRole('heading', { name: 'Child relationship' })).toBeVisible();
+  await expect(
+    pendingMemory.getByRole('heading', { name: 'Possible child relationship' }),
+  ).toBeVisible();
+  await expect(
+    pendingMemory.getByRole('heading', { name: 'Possible sibling relationship' }),
+  ).toBeVisible();
   await expect(
     pendingMemory.getByRole('heading', { name: 'Evenings by the garden gate' }),
   ).toBeVisible();
   await expect(pendingMemory.getByText('Around 1974')).toBeVisible();
+  const clarification = pendingMemory.getByRole('region', { name: 'Needs clarification' });
+  const possibleMatchCard = clarification.getByRole('heading', { name: 'Raj' }).locator('..');
+  await expect(possibleMatchCard.getByText('Possible person')).toBeVisible();
+  await expect(
+    possibleMatchCard.getByText(/has not linked this person automatically/),
+  ).toBeVisible();
+  await expect(possibleMatchCard.getByText(/remains unresolved/)).toBeVisible();
+  const noSelectedMatchCard = clarification.getByRole('heading', { name: 'Devika' }).locator('..');
+  await expect(noSelectedMatchCard.getByText('Person needs clarification')).toBeVisible();
+  await expect(noSelectedMatchCard.getByText(/No confirmed match has been selected/)).toBeVisible();
+  await expect(noSelectedMatchCard.getByText(/remains unresolved/)).toBeVisible();
+  await expect(noSelectedMatchCard.getByText('Possible person')).toHaveCount(0);
+  await expect(noSelectedMatchCard.getByText('Confirmed person')).toHaveCount(0);
+  await expect(
+    noSelectedMatchCard.getByRole('button', { name: /merge|select|confirm|resolve/i }),
+  ).toHaveCount(0);
+  await expect(pendingMemory.getByText(/person reference needs clarification/)).toBeVisible();
+  await expect(pendingMemory.getByText(/Both people are confirmed references/)).toBeVisible();
+
+  const factCard = pendingMemory.getByRole('heading', { name: 'Garden sound' }).locator('..');
+  await factCard.getByText('Source details').focus();
+  await page.keyboard.press('Enter');
+  await expect(factCard.getByText('Supported by 1 interview source.')).toBeVisible();
+  await expect(factCard.getByText('Story item: Fact')).toBeVisible();
+  await expect(pendingMemory.getByText(/From Rosa’s interview/)).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath('phase-4-820.png'), fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   );
@@ -48,9 +86,12 @@ test('Rosa completes a real MCP interview turn and resumes it after reload', asy
   expect(nextQuestion).not.toBe(firstQuestion);
 
   const browserPersistence = await page.evaluate(
-    (privateAnswer) => ({
+    async (privateAnswer) => ({
       local: JSON.stringify(window.localStorage),
       session: JSON.stringify(window.sessionStorage),
+      indexedDbNames: await window.indexedDB
+        .databases()
+        .then((databases) => databases.flatMap(({ name }) => (name === undefined ? [] : [name]))),
       url: window.location.href,
       privateAnswer,
     }),
@@ -58,12 +99,18 @@ test('Rosa completes a real MCP interview turn and resumes it after reload', asy
   );
   expect(browserPersistence.local).not.toContain(rawAnswer);
   expect(browserPersistence.session).not.toContain(rawAnswer);
+  expect(browserPersistence.indexedDbNames).toEqual([]);
   expect(browserPersistence.url).not.toContain(encodeURIComponent(rawAnswer));
 
   await page.getByLabel('Inspect memory as').selectOption('maya');
   await expect(page.getByText('Viewing Maya’s approved family memory.')).toBeVisible();
   await expect(page.getByText(/organizing the memory/i)).not.toBeVisible();
   await expect(page.getByText('The private garden')).not.toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Needs clarification' })).not.toBeVisible();
+  await expect(page.getByText('Raj', { exact: true })).not.toBeVisible();
+  await expect(page.getByText('Devika', { exact: true })).not.toBeVisible();
+  await expect(page.getByText(/Possible person|remains unresolved/)).not.toBeVisible();
+  await expect(page.getByText(/Supported by .* interview source/)).not.toBeVisible();
   await expect(page.getByText(/Viewing as/)).toContainText('Maya');
   await expect(page.getByText(/Approved family view/)).toBeVisible();
   await expect(page.getByText('Moved near the old market')).toBeVisible();
@@ -75,12 +122,22 @@ test('Rosa completes a real MCP interview turn and resumes it after reload', asy
   await page.getByRole('button', { name: 'Connect' }).focus();
   await page.keyboard.press('Enter');
   await expect(page.getByText('15 tools verified')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Needs clarification' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Raj' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Devika' })).toBeVisible();
   await page.getByRole('button', { name: 'Start / Resume interview' }).focus();
   await page.keyboard.press('Enter');
   await expect(page.locator('.current-question')).toHaveText(nextQuestion ?? '');
 
   await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(page.getByRole('heading', { name: 'Needs clarification' })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  await page.screenshot({ path: testInfo.outputPath('phase-4-1440.png'), fullPage: true });
   await page.goto('http://localhost:4174/');
+  await expect(page).toHaveTitle('Story Keeper Timeline');
+  await expect(page.locator('vite-error-overlay')).toHaveCount(0);
   await page.getByRole('button', { name: 'Connect and load timeline' }).click();
   await expect(page.getByText('Timeline loaded from Story Keeper.')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Moved near the old market' })).toBeVisible();

@@ -10,6 +10,19 @@ import '../test-setup.js';
 const context: GetStoryContextResult = {
   actor: { id: '00000000-0000-4000-8000-000000000002', displayName: 'Rosa', role: 'narrator' },
   visibility: 'narrator_review',
+  personIdentities: [
+    {
+      personId: '00000000-0000-4000-8000-000000000002',
+      status: 'confirmed',
+      displayName: 'Rosa',
+    },
+    {
+      personId: '00000000-0000-4000-8000-000000000008',
+      status: 'unresolved',
+      extractedDisplayName: 'Raj',
+      possibleMatchDisplayName: 'Raj Sharma',
+    },
+  ],
   facts: [
     {
       id: '20000000-0000-4000-8000-000000000001',
@@ -80,7 +93,9 @@ describe('DeveloperMemoryInspector', () => {
           element?.tagName === 'P' && element.textContent === 'Move year: 1962 ↔ Move year: 1964',
       ),
     ).toBeInTheDocument();
-    expect(screen.getByText(/Unresolved/)).toBeInTheDocument();
+    expect(screen.getAllByText(/Unresolved/)).toHaveLength(2);
+    expect(screen.getByText('Raj Sharma', { exact: false })).toBeInTheDocument();
+    expect(screen.getByText('People to clarify').nextElementSibling).toHaveTextContent('1');
     expect(screen.queryByRole('button', { name: /keep|resolve|dismiss/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/rawText|raw answer/i)).not.toBeInTheDocument();
   });
@@ -89,7 +104,7 @@ describe('DeveloperMemoryInspector', () => {
     render(
       <DeveloperMemoryInspector
         actor="rosa"
-        context={{ ...context, facts: [] }}
+        context={{ ...context, personIdentities: [], facts: [] }}
         conflicts={[]}
         interviewState="none"
         currentQuestion={null}
