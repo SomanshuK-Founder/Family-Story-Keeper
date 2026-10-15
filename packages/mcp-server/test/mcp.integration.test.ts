@@ -80,6 +80,121 @@ describe('MCP Streamable HTTP integration', () => {
     ]);
   });
 
+  it('returns safe narrator identity metadata without exposing it to a relative', async () => {
+    const runtime = await createRuntime(':memory:');
+    const { client } = await connectClient(runtime.mcpUrl);
+    const mayaId = addMember(runtime, 'Maya', 'relative');
+    const possibleMatchPersonId = addMember(runtime, 'Raj Sharma', 'relative');
+    const started = startInterviewOutputSchema.parse(
+      (
+        await client.callTool({
+          name: 'start_interview',
+          arguments: {
+            familyId: demoSeedIds.familyId,
+            personId: demoSeedIds.rosaPersonId,
+          },
+        })
+      ).structuredContent,
+    );
+    const rawText = 'My brother Raj walked with me after school.';
+    const saved = saveAnswerOutputSchema.parse(
+      (
+        await client.callTool({
+          name: 'save_answer',
+          arguments: {
+            familyId: demoSeedIds.familyId,
+            interviewId: started.interviewId,
+            questionId: started.questionId,
+            rawText,
+          },
+        })
+      ).structuredContent,
+    );
+    const job = runtime.database.client
+      .prepare(
+        "SELECT id FROM jobs WHERE family_id = ? AND type = 'extract_answer' ORDER BY created_at DESC LIMIT 1",
+      )
+      .get(demoSeedIds.familyId) as { id: string } | undefined;
+    if (job === undefined) throw new Error('Expected an extraction job.');
+    const candidatePersonId = randomUUID();
+    const candidateId = randomUUID();
+    const now = new Date();
+    runtime.database.db
+      .insert(schema.people)
+      .values({
+        id: candidatePersonId,
+        familyId: demoSeedIds.familyId,
+        canonicalDisplayName: 'Raj',
+        status: 'inactive',
+        createdAt: now,
+        updatedAt: now,
+      })
+      .run();
+    runtime.database.db
+      .insert(schema.personCandidates)
+      .values({
+        id: candidateId,
+        familyId: demoSeedIds.familyId,
+        candidatePersonId,
+        answerId: saved.answerId,
+        jobId: job.id,
+        extractedName: 'Raj',
+        confidence: 1,
+        status: 'unresolved',
+        possibleMatchPersonId,
+        matchScore: 1,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .run();
+    new DrizzleStoryMemoryRepository(runtime.database).createRelationship({
+      familyId: demoSeedIds.familyId,
+      fromPersonId: demoSeedIds.rosaPersonId,
+      toPersonId: mayaId,
+      relationshipType: 'child',
+      confidence: 1,
+    });
+
+    const narratorContext = getStoryContextOutputSchema.parse(
+      (
+        await client.callTool({
+          name: 'get_story_context',
+          arguments: {
+            familyId: demoSeedIds.familyId,
+            actorPersonId: demoSeedIds.rosaPersonId,
+          },
+        })
+      ).structuredContent,
+    );
+    expect(narratorContext.personIdentities).toEqual(
+      expect.arrayContaining([
+        { personId: mayaId, status: 'confirmed', displayName: 'Maya' },
+        {
+          personId: candidatePersonId,
+          status: 'unresolved',
+          extractedDisplayName: 'Raj',
+          possibleMatchDisplayName: 'Raj Sharma',
+        },
+      ]),
+    );
+    const serializedNarratorContext = JSON.stringify(narratorContext);
+    const serializedIdentities = JSON.stringify(narratorContext.personIdentities);
+    expect(serializedNarratorContext).not.toContain(rawText);
+    expect(serializedNarratorContext).not.toContain(candidateId);
+    expect(serializedIdentities).not.toMatch(/matchScore|answerId|confidence/);
+
+    const relativeContext = getStoryContextOutputSchema.parse(
+      (
+        await client.callTool({
+          name: 'get_story_context',
+          arguments: { familyId: demoSeedIds.familyId, actorPersonId: mayaId },
+        })
+      ).structuredContent,
+    );
+    expect(relativeContext.personIdentities).toEqual([]);
+    expect(JSON.stringify(relativeContext)).not.toContain('Raj');
+  });
+
   it('calls all Story Keeper tools and rejects malformed or unknown calls', async () => {
     const runtime = await createRuntime(':memory:');
     const { client } = await connectClient(runtime.mcpUrl);

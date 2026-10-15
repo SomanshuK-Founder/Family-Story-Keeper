@@ -15,6 +15,7 @@ const { familyId, rosaPersonId: personId, mayaPersonId } = storyKeeperDemoIds;
 const interviewId = '10000000-0000-4000-8000-000000000001';
 const questionId = '10000000-0000-4000-8000-000000000002';
 const answerId = '10000000-0000-4000-8000-000000000003';
+const candidatePersonId = '10000000-0000-4000-8000-000000000004';
 
 function result(structuredContent: Record<string, unknown>): CallToolResult {
   return { content: [{ type: 'text', text: 'Structured response' }], structuredContent };
@@ -49,6 +50,15 @@ function baseSession() {
           result({
             actor: { id: personId, displayName: 'Rosa', role: 'narrator' },
             visibility: 'narrator_review',
+            personIdentities: [
+              { personId, status: 'confirmed', displayName: 'Rosa' },
+              {
+                personId: candidatePersonId,
+                status: 'unresolved',
+                extractedDisplayName: 'Raj',
+                possibleMatchDisplayName: 'Raj Sharma',
+              },
+            ],
             facts: [],
             relationships: [],
             timelineEvents: [],
@@ -79,7 +89,17 @@ describe('StoryKeeperMcpClient', () => {
     ).resolves.toEqual({ answerId, status: 'saved' });
     await expect(
       client.getStoryContext({ familyId, actorPersonId: personId }),
-    ).resolves.toMatchObject({ visibility: 'narrator_review' });
+    ).resolves.toMatchObject({
+      visibility: 'narrator_review',
+      personIdentities: [
+        { status: 'confirmed', displayName: 'Rosa' },
+        {
+          status: 'unresolved',
+          extractedDisplayName: 'Raj',
+          possibleMatchDisplayName: 'Raj Sharma',
+        },
+      ],
+    });
     await expect(client.listPendingConflicts({ familyId, interviewId })).resolves.toEqual({
       conflicts: [],
     });

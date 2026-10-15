@@ -86,6 +86,7 @@ export {
   familyGraphNodeSchema,
   familyGraphResponseSchema,
   presentationReadInputSchema,
+  storyContextPersonIdentitySchema,
   timelineItemSchema,
   timelineResponseSchema,
   type ApprovedChapterSummary,
@@ -94,6 +95,7 @@ export {
   type FamilyGraphNode,
   type FamilyGraphResponse,
   type PresentationReadInput,
+  type StoryContextPersonIdentity,
   type TimelineItem,
   type TimelineResponse,
 } from './presentation.js';

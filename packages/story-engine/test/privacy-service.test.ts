@@ -269,6 +269,89 @@ describe('Phase 5 approval and privacy boundary', () => {
     expect(memory.findRelationship(demoSeedIds.familyId, relationship.id)?.status).toBe('pending');
   });
 
+  it('returns only safe narrator-scoped confirmed and unresolved identity references', () => {
+    const possibleMatchPersonId = addMember('Raj Sharma', 'relative');
+    const trustedPersonId = addMember('Leela', 'relative');
+    const singleMatchCandidatePersonId = addCandidate({
+      displayName: 'Raj',
+      possibleMatchPersonId,
+    });
+    const tiedCandidatePersonId = addCandidate({ displayName: 'Raj' });
+    const trustedRelationship = memory.createRelationship({
+      familyId: demoSeedIds.familyId,
+      fromPersonId: demoSeedIds.rosaPersonId,
+      toPersonId: trustedPersonId,
+      relationshipType: 'friend',
+      confidence: 1,
+    });
+    const unresolvedRelationship = memory.createRelationship({
+      familyId: demoSeedIds.familyId,
+      fromPersonId: demoSeedIds.rosaPersonId,
+      toPersonId: singleMatchCandidatePersonId,
+      relationshipType: 'sibling',
+      confidence: 1,
+    });
+
+    const otherFamily = addFamily('Other Family', 'Other Narrator');
+    const otherInterviewService = new InterviewService(
+      interviews,
+      new NarratorMemoryService(interviews, new DrizzleNarratorMemoryRepository(database)),
+    );
+    const otherStarted = otherInterviewService.startInterview(
+      otherFamily.familyId,
+      otherFamily.personId,
+    );
+    const otherAnswerId = otherInterviewService.saveAnswer(
+      otherFamily.familyId,
+      otherStarted.interviewId,
+      otherStarted.questionId,
+      'Another family mentioned Secret Raj.',
+    ).answerId;
+    const otherJob = database.client
+      .prepare('SELECT id FROM jobs WHERE family_id = ? LIMIT 1')
+      .get(otherFamily.familyId) as { id: string } | undefined;
+    if (otherJob === undefined) throw new Error('Expected the other-family extraction job.');
+    addCandidate({
+      familyId: otherFamily.familyId,
+      answerId: otherAnswerId,
+      jobId: otherJob.id,
+      displayName: 'Secret Raj',
+    });
+
+    const narratorContext = privacy.getStoryContext(demoSeedIds.familyId, demoSeedIds.rosaPersonId);
+    expect(narratorContext.relationships.map(({ id }) => id)).toEqual(
+      expect.arrayContaining([trustedRelationship.id, unresolvedRelationship.id]),
+    );
+    expect(narratorContext.personIdentities).toEqual(
+      expect.arrayContaining([
+        {
+          personId: trustedPersonId,
+          status: 'confirmed',
+          displayName: 'Leela',
+        },
+        {
+          personId: singleMatchCandidatePersonId,
+          status: 'unresolved',
+          extractedDisplayName: 'Raj',
+          possibleMatchDisplayName: 'Raj Sharma',
+        },
+        {
+          personId: tiedCandidatePersonId,
+          status: 'unresolved',
+          extractedDisplayName: 'Raj',
+          possibleMatchDisplayName: null,
+        },
+      ]),
+    );
+    expect(singleMatchCandidatePersonId).not.toBe(possibleMatchPersonId);
+    expect(tiedCandidatePersonId).not.toBe(possibleMatchPersonId);
+    expect(JSON.stringify(narratorContext)).not.toContain('A private source answer.');
+    expect(JSON.stringify(narratorContext)).not.toContain('Secret Raj');
+    expect(JSON.stringify(narratorContext)).not.toMatch(/matchScore|answerId|candidateId/);
+    expect(privacy.getStoryContext(demoSeedIds.familyId, mayaId).personIdentities).toEqual([]);
+    expect(privacy.getStoryContext(demoSeedIds.familyId, childId).personIdentities).toEqual([]);
+  });
+
   it('enforces actor role and family scope', () => {
     const fact = createFact('home_city', 'Delhi');
     const otherFamily = addFamily('Other Family', 'Other Narrator');
@@ -424,6 +507,52 @@ describe('Phase 5 approval and privacy boundary', () => {
         createdAt: new Date(),
       })
       .run();
+  }
+
+  function addCandidate({
+    familyId = demoSeedIds.familyId,
+    answerId: candidateAnswerId = answerId,
+    jobId: candidateJobId = jobId,
+    displayName,
+    possibleMatchPersonId = null,
+  }: {
+    readonly familyId?: string;
+    readonly answerId?: string;
+    readonly jobId?: string;
+    readonly displayName: string;
+    readonly possibleMatchPersonId?: string | null;
+  }): string {
+    const personId = randomUUID();
+    const now = new Date();
+    database.db
+      .insert(schema.people)
+      .values({
+        id: personId,
+        familyId,
+        canonicalDisplayName: displayName,
+        status: 'inactive',
+        createdAt: now,
+        updatedAt: now,
+      })
+      .run();
+    database.db
+      .insert(schema.personCandidates)
+      .values({
+        id: randomUUID(),
+        familyId,
+        candidatePersonId: personId,
+        answerId: candidateAnswerId,
+        jobId: candidateJobId,
+        extractedName: displayName,
+        confidence: 1,
+        status: 'unresolved',
+        possibleMatchPersonId,
+        matchScore: possibleMatchPersonId === null ? null : 1,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .run();
+    return personId;
   }
 
   function contextIds(actorPersonId: string) {

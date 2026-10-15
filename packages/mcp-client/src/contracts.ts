@@ -4,6 +4,7 @@ import {
   presentationReadInputSchema,
   relationshipTypeSchema,
   storyItemStatusSchema,
+  storyContextPersonIdentitySchema,
   timelineResponseSchema,
 } from '@story-keeper/shared';
 import { z } from 'zod';
@@ -75,6 +76,7 @@ export const getStoryContextResultSchema = z.object({
     role: z.enum(['narrator', 'relative', 'child']),
   }),
   visibility: z.enum(['narrator_review', 'approved_family']),
+  personIdentities: z.array(storyContextPersonIdentitySchema).optional(),
   facts: z.array(
     contextItemBaseSchema.extend({
       subjectPersonId: opaqueIdSchema,

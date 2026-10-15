@@ -4,6 +4,25 @@ import { approximateDateSchema, relationshipTypeSchema } from './story-memory.js
 
 const opaqueIdSchema = z.uuid();
 
+export const storyContextPersonIdentitySchema = z.discriminatedUnion('status', [
+  z
+    .object({
+      personId: opaqueIdSchema,
+      status: z.literal('confirmed'),
+      displayName: z.string().min(1),
+    })
+    .strict(),
+  z
+    .object({
+      personId: opaqueIdSchema,
+      status: z.literal('unresolved'),
+      extractedDisplayName: z.string().min(1),
+      possibleMatchDisplayName: z.string().min(1).nullable(),
+    })
+    .strict(),
+]);
+export type StoryContextPersonIdentity = z.infer<typeof storyContextPersonIdentitySchema>;
+
 /**
  * Phase 8 frontend-facing contracts. Breaking changes require coordination with Person B;
  * prefer additive optional fields when these contracts need to grow.

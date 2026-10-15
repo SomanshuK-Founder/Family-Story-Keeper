@@ -4,6 +4,7 @@ import {
   approvedChaptersResponseSchema,
   familyGraphResponseSchema,
   presentationReadInputSchema,
+  storyContextPersonIdentitySchema,
   timelineResponseSchema,
 } from '@story-keeper/shared';
 import { describe, expect, it } from 'vitest';
@@ -58,5 +59,40 @@ describe('Phase 8 presentation contracts', () => {
         ],
       }).chapters,
     ).toHaveLength(1);
+  });
+
+  it('validates safe confirmed and unresolved identity references without internal metadata', () => {
+    const confirmedPersonId = randomUUID();
+    const unresolvedPersonId = randomUUID();
+
+    expect(
+      storyContextPersonIdentitySchema.parse({
+        personId: confirmedPersonId,
+        status: 'confirmed',
+        displayName: 'Raj Sharma',
+      }),
+    ).toEqual({ personId: confirmedPersonId, status: 'confirmed', displayName: 'Raj Sharma' });
+    expect(
+      storyContextPersonIdentitySchema.parse({
+        personId: unresolvedPersonId,
+        status: 'unresolved',
+        extractedDisplayName: 'Raj',
+        possibleMatchDisplayName: null,
+      }),
+    ).toEqual({
+      personId: unresolvedPersonId,
+      status: 'unresolved',
+      extractedDisplayName: 'Raj',
+      possibleMatchDisplayName: null,
+    });
+    expect(() =>
+      storyContextPersonIdentitySchema.parse({
+        personId: unresolvedPersonId,
+        status: 'unresolved',
+        extractedDisplayName: 'Raj',
+        possibleMatchDisplayName: 'Raj Sharma',
+        matchScore: 1,
+      }),
+    ).toThrow();
   });
 });

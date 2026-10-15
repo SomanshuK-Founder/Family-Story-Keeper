@@ -6,6 +6,7 @@ import type {
   ApproximateDate,
   ChapterDraftStatus,
   RelationshipType,
+  StoryContextPersonIdentity,
   StoryItemStatus,
   StoryItemTargetType,
 } from '@story-keeper/shared';
@@ -69,6 +70,7 @@ export interface ContextTimelineEventRecord {
 }
 
 export interface StoryContextRecord {
+  readonly personIdentities: readonly StoryContextPersonIdentity[];
   readonly facts: readonly ContextFactRecord[];
   readonly relationships: readonly ContextRelationshipRecord[];
   readonly timelineEvents: readonly ContextTimelineEventRecord[];
@@ -528,7 +530,84 @@ export class DrizzlePrivacyRepository implements PrivacyRepository {
       .orderBy(asc(chapterDrafts.createdAt), asc(chapterDrafts.id))
       .all();
 
+    const candidateRows =
+      narratorPersonId === undefined
+        ? []
+        : this.database.db
+            .select({
+              personId: personCandidates.candidatePersonId,
+              extractedDisplayName: personCandidates.extractedName,
+              possibleMatchPersonId: personCandidates.possibleMatchPersonId,
+            })
+            .from(personCandidates)
+            .innerJoin(
+              answers,
+              and(
+                eq(answers.familyId, personCandidates.familyId),
+                eq(answers.id, personCandidates.answerId),
+              ),
+            )
+            .where(
+              and(
+                eq(personCandidates.familyId, familyId),
+                eq(personCandidates.status, 'unresolved'),
+                eq(answers.narratorPersonId, narratorPersonId),
+              ),
+            )
+            .orderBy(asc(personCandidates.createdAt), asc(personCandidates.id))
+            .all();
+    const unresolvedPersonIds = new Set(candidateRows.map(({ personId }) => personId));
+    const referencedPersonIds = new Set([
+      ...factRows.map(({ subjectPersonId }) => subjectPersonId),
+      ...relationshipRows.flatMap(({ fromPersonId, toPersonId }) => [fromPersonId, toPersonId]),
+      ...eventRows.map(({ subjectPersonId }) => subjectPersonId),
+    ]);
+    const identityLookupIds = new Set([
+      ...[...referencedPersonIds].filter((personId) => !unresolvedPersonIds.has(personId)),
+      ...candidateRows.flatMap(({ possibleMatchPersonId }) =>
+        possibleMatchPersonId === null ? [] : [possibleMatchPersonId],
+      ),
+    ]);
+    const identityPeople =
+      identityLookupIds.size === 0
+        ? []
+        : this.database.db
+            .select({ id: people.id, displayName: people.canonicalDisplayName })
+            .from(people)
+            .where(
+              and(
+                eq(people.familyId, familyId),
+                inArray(people.id, [...identityLookupIds]),
+                eq(people.status, 'active'),
+              ),
+            )
+            .orderBy(asc(people.canonicalDisplayName), asc(people.id))
+            .all();
+    const identityNames = new Map(identityPeople.map(({ id, displayName }) => [id, displayName]));
+    const personIdentities: StoryContextPersonIdentity[] =
+      narratorPersonId === undefined
+        ? []
+        : [
+            ...[...referencedPersonIds].flatMap((personId): StoryContextPersonIdentity[] => {
+              if (unresolvedPersonIds.has(personId)) return [];
+              const displayName = identityNames.get(personId);
+              return displayName === undefined
+                ? []
+                : [{ personId, status: 'confirmed', displayName }];
+            }),
+            ...candidateRows.map(({ personId, extractedDisplayName, possibleMatchPersonId }) => ({
+              personId,
+              status: 'unresolved' as const,
+              extractedDisplayName,
+              possibleMatchDisplayName:
+                possibleMatchPersonId === null
+                  ? null
+                  : (identityNames.get(possibleMatchPersonId) ?? null),
+            })),
+          ];
+
     return {
+      personIdentities,
       facts: factRows.map((fact) => ({
         id: fact.id,
         subjectPersonId: fact.subjectPersonId,

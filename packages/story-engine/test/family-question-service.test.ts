@@ -405,6 +405,7 @@ describe('Phase 6 family question queue', () => {
     expect(Object.keys(relativeContext)).toEqual([
       'actor',
       'visibility',
+      'personIdentities',
       'facts',
       'relationships',
       'timelineEvents',

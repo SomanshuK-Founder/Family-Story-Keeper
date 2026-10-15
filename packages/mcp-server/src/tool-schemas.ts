@@ -11,6 +11,7 @@ import {
   relationshipTypeSchema,
   searchFamilyStoryInputSchema,
   searchFamilyStoryOutputSchema,
+  storyContextPersonIdentitySchema,
   storyItemTargetTypeSchema,
   timelineResponseSchema,
   maximumRawAnswerLength,
@@ -132,6 +133,7 @@ export const getStoryContextOutputSchema = z.object({
     role: z.enum(['narrator', 'relative', 'child']),
   }),
   visibility: z.enum(['narrator_review', 'approved_family']),
+  personIdentities: z.array(storyContextPersonIdentitySchema).optional(),
   facts: z.array(
     z.object({
       id: opaqueId,

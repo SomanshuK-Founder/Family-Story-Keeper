@@ -9,7 +9,12 @@ import type {
   PrivacyRepository,
 } from '@story-keeper/database';
 import { PrivacyRepositoryError } from '@story-keeper/database';
-import type { ApprovalAction, ApprovalTargetType, StoryItemTargetType } from '@story-keeper/shared';
+import type {
+  ApprovalAction,
+  ApprovalTargetType,
+  StoryContextPersonIdentity,
+  StoryItemTargetType,
+} from '@story-keeper/shared';
 
 import { StoryKeeperError } from './errors.js';
 
@@ -26,6 +31,7 @@ export interface GetStoryContextResult {
     readonly role: 'narrator' | 'relative' | 'child';
   };
   readonly visibility: 'narrator_review' | 'approved_family';
+  readonly personIdentities: readonly StoryContextPersonIdentity[];
   readonly facts: readonly ContextFactRecord[];
   readonly relationships: readonly ContextRelationshipRecord[];
   readonly timelineEvents: readonly ContextTimelineEventRecord[];

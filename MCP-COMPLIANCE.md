@@ -81,6 +81,13 @@ Intended priority:
 ### `get_story_context`
 Return relevant narrator-safe context while respecting visibility.
 
+The additive `personIdentities` read field provides only identities relevant to narrator context:
+- confirmed active person references include a display name
+- unresolved extracted candidates include the extracted display name and an optional possible-match display name
+- relative and child approved-family responses do not include narrator-private candidate details
+
+It does not expose candidate row IDs, match scores, raw answers, or identity-resolution actions.
+
 ### `queue_family_question`
 Persist a question from one relative to another narrator.
 
