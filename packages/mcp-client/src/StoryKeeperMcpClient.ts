@@ -6,6 +6,10 @@ import type { PresentationReadInput, TimelineResponse } from '@story-keeper/shar
 import type { z } from 'zod';
 
 import {
+  approveStoryItemInputSchema,
+  approveStoryItemResultSchema,
+  deletePendingMemoryInputSchema,
+  deletePendingMemoryResultSchema,
   getNextQuestionInputSchema,
   getNextQuestionResultSchema,
   getStoryContextInputSchema,
@@ -20,6 +24,10 @@ import {
   startInterviewInputSchema,
   startInterviewResultSchema,
   timelineResponseSchema,
+  type ApproveStoryItemInput,
+  type ApproveStoryItemResult,
+  type DeletePendingMemoryInput,
+  type DeletePendingMemoryResult,
   type GetNextQuestionInput,
   type GetNextQuestionResult,
   type GetStoryContextInput,
@@ -61,6 +69,9 @@ export type StoryKeeperClientErrorCode =
   | 'validation'
   | 'authorization'
   | 'conflict_state'
+  | 'story_item_state'
+  | 'provenance'
+  | 'identity'
   | 'interview_state'
   | 'unexpected';
 
@@ -84,6 +95,8 @@ export interface StoryKeeperClient {
   getStoryContext(input: GetStoryContextInput): Promise<GetStoryContextResult>;
   listPendingConflicts(input: ListPendingConflictsInput): Promise<ListPendingConflictsResult>;
   resolveConflict(input: ResolveConflictInput): Promise<ResolveConflictResult>;
+  approveStoryItem(input: ApproveStoryItemInput): Promise<ApproveStoryItemResult>;
+  deletePendingMemory(input: DeletePendingMemoryInput): Promise<DeletePendingMemoryResult>;
   getTimeline(input: PresentationReadInput): Promise<TimelineResponse>;
 }
 
@@ -186,6 +199,24 @@ export class StoryKeeperMcpClient implements StoryKeeperClient {
       'resolve_conflict',
       resolveConflictInputSchema,
       resolveConflictResultSchema,
+      input,
+    );
+  }
+
+  public approveStoryItem(input: ApproveStoryItemInput): Promise<ApproveStoryItemResult> {
+    return this.callValidatedTool(
+      'approve_story_item',
+      approveStoryItemInputSchema,
+      approveStoryItemResultSchema,
+      input,
+    );
+  }
+
+  public deletePendingMemory(input: DeletePendingMemoryInput): Promise<DeletePendingMemoryResult> {
+    return this.callValidatedTool(
+      'delete_pending_memory',
+      deletePendingMemoryInputSchema,
+      deletePendingMemoryResultSchema,
       input,
     );
   }
@@ -314,6 +345,30 @@ function mapToolError(result: CallToolResult): StoryKeeperClientError {
     return new StoryKeeperClientError(
       'validation',
       'That resolution is not available for this conflict.',
+    );
+  }
+  if (serverCode === 'STORY_ITEM_PROVENANCE_REQUIRED') {
+    return new StoryKeeperClientError(
+      'provenance',
+      'This memory cannot be approved yet because its source information is incomplete.',
+    );
+  }
+  if (serverCode === 'STORY_ITEM_IDENTITY_UNRESOLVED') {
+    return new StoryKeeperClientError(
+      'identity',
+      'This relationship cannot be approved until its person references are resolved.',
+    );
+  }
+  if (serverCode === 'STORY_ITEM_NOT_RELEVANT') {
+    return new StoryKeeperClientError(
+      'authorization',
+      'This family member is not authorized to change that memory.',
+    );
+  }
+  if (serverCode === 'STORY_ITEM_STATE_CONFLICT' || serverCode === 'STORY_ITEM_NOT_FOUND') {
+    return new StoryKeeperClientError(
+      'story_item_state',
+      'This memory changed since it was loaded.',
     );
   }
   if (serverCode?.includes('VALIDATION') === true)

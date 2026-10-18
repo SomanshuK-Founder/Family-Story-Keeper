@@ -159,6 +159,20 @@ function createClient() {
           resolvedAt: '2026-01-01T00:00:00.000Z',
         }),
     ),
+    approveStoryItem: vi.fn<StoryKeeperClient['approveStoryItem']>(
+      ({ targetType, targetId, action }) =>
+        Promise.resolve({
+          targetType,
+          targetId,
+          action,
+          status: 'updated',
+          itemStatus: action === 'approve' ? 'approved' : 'rejected',
+        }),
+    ),
+    deletePendingMemory: vi.fn<StoryKeeperClient['deletePendingMemory']>(
+      ({ targetType, targetId }) =>
+        Promise.resolve({ targetType, targetId, status: 'deleted', itemStatus: 'rejected' }),
+    ),
     getTimeline: vi.fn<StoryKeeperClient['getTimeline']>(() => Promise.resolve({ items: [] })),
   } satisfies StoryKeeperClient;
 }
@@ -271,7 +285,7 @@ describe('SimulatorApp', () => {
     expect(screen.queryByText('New structured memory is ready.')).not.toBeInTheDocument();
 
     expect(await screen.findByText('New structured memory is ready.')).toBeInTheDocument();
-    const productRegion = screen.getByRole('region', { name: 'Memories waiting for review' });
+    const productRegion = screen.getByRole('region', { name: 'Review story memories' });
     expect(
       within(productRegion).getByText('The garden gate squeaked in the evening breeze.'),
     ).toBeInTheDocument();
@@ -345,9 +359,8 @@ describe('SimulatorApp', () => {
     expect(screen.queryByText('Your answer was saved.')).not.toBeInTheDocument();
     expect(screen.queryByText(/organizing the memory/i)).not.toBeInTheDocument();
     expect(screen.getByText('Viewing Maya’s approved family memory.')).toBeInTheDocument();
-    expect(
-      screen.queryByRole('region', { name: 'Memories waiting for review' }),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Review story memories' })).not.toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Approved family memories' })).toBeInTheDocument();
     expect(screen.queryByText('Private Raj')).not.toBeInTheDocument();
     expect(screen.queryByText('Raj Sharma')).not.toBeInTheDocument();
     expect(screen.queryByText(/Supported by .* interview source/)).not.toBeInTheDocument();
@@ -416,6 +429,164 @@ describe('SimulatorApp', () => {
     render(<SimulatorApp createClient={createClient} />);
     fireEvent.click(screen.getByRole('button', { name: '+3 Days' }));
     expect(screen.getByText('Demo day: +3 days')).toBeInTheDocument();
+  });
+
+  it('approves through the client and shows only canonically refreshed state', async () => {
+    let approved = false;
+    const pendingFact = rosaContext.facts[0];
+    if (pendingFact === undefined) throw new Error('Expected the Rosa fixture to include a fact.');
+    const approvedFact = { ...pendingFact, status: 'approved' as const };
+    const approvedRosaContext: GetStoryContextResult = { ...rosaContext, facts: [approvedFact] };
+    const approvedMayaContext: GetStoryContextResult = {
+      ...mayaContext,
+      facts: [approvedFact],
+    };
+    const client = createClient();
+    client.getStoryContext = vi.fn<StoryKeeperClient['getStoryContext']>(({ actorPersonId }) =>
+      Promise.resolve(
+        actorPersonId === storyKeeperDemoIds.mayaPersonId
+          ? approvedMayaContext
+          : approved
+            ? approvedRosaContext
+            : rosaContext,
+      ),
+    );
+    client.approveStoryItem = vi.fn<StoryKeeperClient['approveStoryItem']>((input) => {
+      approved = true;
+      return Promise.resolve({
+        targetType: input.targetType,
+        targetId: input.targetId,
+        action: input.action,
+        status: 'updated',
+        itemStatus: 'approved',
+      });
+    });
+    render(<SimulatorApp createClient={() => client} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    await screen.findByText('15 tools verified');
+    const review = screen.getByRole('region', { name: 'Review story memories' });
+    fireEvent.click(within(review).getByRole('button', { name: 'Approve Favorite place' }));
+
+    expect(await within(review).findByText('Approved memory')).toBeVisible();
+    expect(within(review).getByRole('status')).toHaveTextContent(
+      'Memory approved. Story Keeper refreshed the latest story state.',
+    );
+    expect(client.approveStoryItem).toHaveBeenCalledWith({
+      familyId: storyKeeperDemoIds.familyId,
+      actorPersonId: storyKeeperDemoIds.rosaPersonId,
+      targetType: 'fact',
+      targetId: approvedFact.id,
+      action: 'approve',
+    });
+    expect(
+      within(review).getByRole('button', { name: 'Revoke approval for Favorite place' }),
+    ).toBeEnabled();
+
+    fireEvent.change(screen.getByLabelText('Inspect memory as'), { target: { value: 'maya' } });
+    const familyView = await screen.findByRole('region', { name: 'Approved family memories' });
+    expect(within(familyView).getByText('The private garden')).toBeVisible();
+    expect(
+      within(familyView).queryByRole('button', { name: /approve|reject|revoke|remove/i }),
+    ).toBeNull();
+    expect(client.getStoryContext).toHaveBeenLastCalledWith({
+      familyId: storyKeeperDemoIds.familyId,
+      actorPersonId: storyKeeperDemoIds.mayaPersonId,
+    });
+  });
+
+  it('refreshes canonical state after a stale conflicting memory transition', async () => {
+    let externallyApproved = false;
+    const approvedContext: GetStoryContextResult = {
+      ...rosaContext,
+      facts: rosaContext.facts.map((fact) => ({ ...fact, status: 'approved' as const })),
+    };
+    const client = createClient();
+    client.getStoryContext = vi.fn<StoryKeeperClient['getStoryContext']>(() =>
+      Promise.resolve(externallyApproved ? approvedContext : rosaContext),
+    );
+    client.approveStoryItem = vi.fn<StoryKeeperClient['approveStoryItem']>(() => {
+      externallyApproved = true;
+      return Promise.reject(
+        new StoryKeeperClientError('story_item_state', 'This memory changed since it was loaded.'),
+      );
+    });
+    render(<SimulatorApp createClient={() => client} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    await screen.findByText('15 tools verified');
+    fireEvent.click(screen.getByRole('button', { name: 'Reject Favorite place' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm rejection for Favorite place' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'This memory changed since you opened it. We’ve refreshed the latest story state.',
+    );
+    expect(screen.getByText('Approved memory')).toBeVisible();
+    expect(
+      screen.getByRole('button', { name: 'Revoke approval for Favorite place' }),
+    ).toBeEnabled();
+  });
+
+  it('does not let a late Rosa approval refresh or notice reach Maya', async () => {
+    let resolveLateRosaRefresh: ((context: GetStoryContextResult) => void) | undefined;
+    let resolveApproval:
+      ((result: Awaited<ReturnType<StoryKeeperClient['approveStoryItem']>>) => void) | undefined;
+    let approvalStarted = false;
+    const client = createClient();
+    client.approveStoryItem = vi.fn<StoryKeeperClient['approveStoryItem']>(
+      () =>
+        new Promise((resolve) => {
+          resolveApproval = resolve;
+        }),
+    );
+    client.getStoryContext = vi.fn<StoryKeeperClient['getStoryContext']>(({ actorPersonId }) => {
+      if (actorPersonId === storyKeeperDemoIds.mayaPersonId) return Promise.resolve(mayaContext);
+      if (!approvalStarted) return Promise.resolve(rosaContext);
+      return new Promise((resolve) => {
+        resolveLateRosaRefresh = resolve;
+      });
+    });
+    render(<SimulatorApp createClient={() => client} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    await screen.findByText('15 tools verified');
+    fireEvent.click(screen.getByRole('button', { name: 'Approve Favorite place' }));
+    await screen.findByText('Approving memory…');
+    approvalStarted = true;
+    const pendingFact = rosaContext.facts[0];
+    if (pendingFact === undefined) throw new Error('Expected the Rosa fixture to include a fact.');
+    resolveApproval?.({
+      targetType: 'fact',
+      targetId: pendingFact.id,
+      action: 'approve',
+      status: 'updated',
+      itemStatus: 'approved',
+    });
+    await waitFor(() => {
+      expect(resolveLateRosaRefresh).toBeTypeOf('function');
+    });
+
+    fireEvent.change(screen.getByLabelText('Inspect memory as'), { target: { value: 'maya' } });
+    const familyView = await screen.findByRole('region', { name: 'Approved family memories' });
+    expect(
+      within(familyView).getByText('No approved family memories are available yet.'),
+    ).toBeVisible();
+    expect(screen.queryByText(/Approving memory|Memory approved|could not change/i)).toBeNull();
+
+    resolveLateRosaRefresh?.({
+      ...rosaContext,
+      facts: rosaContext.facts.map((fact) => ({ ...fact, status: 'approved' as const })),
+    });
+    await waitFor(() => {
+      expect(
+        within(familyView).getByText('No approved family memories are available yet.'),
+      ).toBeVisible();
+      expect(screen.queryByText(/The private garden|Memory approved|could not change/i)).toBeNull();
+    });
+    expect(client.getStoryContext).toHaveBeenLastCalledWith({
+      familyId: storyKeeperDemoIds.familyId,
+      actorPersonId: storyKeeperDemoIds.mayaPersonId,
+    });
   });
 
   it('confirms a resolution and refreshes conflicts from canonical backend state', async () => {

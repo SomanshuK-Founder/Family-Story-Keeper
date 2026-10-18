@@ -206,6 +206,19 @@
   font-weight: 800;
   cursor: pointer;
 }
+.text-button {
+  min-height: 2.75rem;
+  padding: 0.55rem 0;
+  color: var(--accent-dark);
+  background: transparent;
+  border: 0;
+  font: inherit;
+  font-weight: 800;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 0.2rem;
+  cursor: pointer;
+}
 .primary-button {
   color: #fff;
   background: var(--accent);
@@ -222,6 +235,10 @@
 }
 .primary-button:disabled,
 .secondary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+.text-button:disabled {
   cursor: not-allowed;
   opacity: 0.58;
 }
@@ -440,6 +457,9 @@
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
+.memory-state[data-status='approved'] {
+  color: #2f613e;
+}
 .memory-date {
   color: var(--muted);
   font-weight: 750;
@@ -503,6 +523,66 @@
   margin: 0;
   color: var(--muted);
   font-size: 0.9rem;
+}
+.memory-review-actions {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--border);
+}
+.memory-action-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  align-items: center;
+}
+.memory-action-buttons .primary-button,
+.memory-action-buttons .secondary-button {
+  min-height: 2.75rem;
+  padding: 0.55rem 0.8rem;
+}
+.memory-action-guidance,
+.memory-mutation-progress {
+  margin: 0;
+  color: #654b1d;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+.memory-mutation-progress {
+  font-weight: 800;
+}
+.memory-action-confirmation {
+  padding: 0.85rem;
+  background: #fff5e5;
+  border: 2px solid #cf9f64;
+  border-radius: 0.7rem;
+}
+.memory-action-confirmation:focus {
+  outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  outline-offset: 0.2rem;
+}
+.memory-action-confirmation h4,
+.memory-action-confirmation p {
+  margin-top: 0;
+}
+.memory-action-confirmation p {
+  line-height: 1.45;
+}
+.memory-mutation-notice {
+  margin: 0 0 1rem;
+  padding: 0.85rem 1rem;
+  border-radius: 0.7rem;
+}
+.memory-mutation-notice[data-kind='success'] {
+  color: #2f5338;
+  background: #edf5ea;
+  border: 1px solid #b9d0b4;
+}
+.memory-mutation-notice[data-kind='error'] {
+  color: #662c1f;
+  background: #fff1eb;
+  border: 1px solid #d99c88;
 }
 .conflict-review {
   margin: 1.5rem auto 0;
@@ -761,10 +841,14 @@
     display: grid;
   }
   .conflict-action-buttons,
+  .memory-action-buttons,
   .confirmation-actions {
     display: grid;
   }
   .conflict-action-buttons .secondary-button,
+  .memory-action-buttons .primary-button,
+  .memory-action-buttons .secondary-button,
+  .memory-action-buttons .text-button,
   .confirmation-actions .secondary-button,
   .confirmation-actions .primary-button {
     width: 100%;

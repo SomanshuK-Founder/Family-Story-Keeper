@@ -4,6 +4,11 @@ import { formatStoryDate } from '@story-keeper/ui';
 
 import { PersonIdentityStatus } from './PersonIdentityStatus.js';
 import { ProvenanceDisclosure } from './ProvenanceDisclosure.js';
+import {
+  MemoryReviewActions,
+  type ActiveMemoryMutation,
+  type MutateMemory,
+} from './MemoryReviewActions.js';
 
 type StoryTimelineEvent = GetStoryContextResult['timelineEvents'][number];
 
@@ -11,12 +16,24 @@ interface TimelineMemoryCardProps {
   readonly event: StoryTimelineEvent;
   readonly identity: StoryContextPersonIdentity | undefined;
   readonly isNew: boolean;
+  readonly canManage: boolean;
+  readonly activeMutation: ActiveMemoryMutation | null;
+  readonly onMutate: MutateMemory;
 }
 
-export function TimelineMemoryCard({ event, identity, isNew }: TimelineMemoryCardProps) {
+export function TimelineMemoryCard({
+  event,
+  identity,
+  isNew,
+  canManage,
+  activeMutation,
+  onMutate,
+}: TimelineMemoryCardProps) {
   return (
     <article className="memory-card" data-new={isNew || undefined}>
-      <p className="memory-state">Pending timeline memory</p>
+      <p className="memory-state" data-status={event.status}>
+        {event.status === 'approved' ? 'Approved timeline memory' : 'Pending timeline memory'}
+      </p>
       <h3>{event.title}</h3>
       <p className="memory-date">{formatStoryDate(event.date)}</p>
       <p>{event.description}</p>
@@ -26,6 +43,21 @@ export function TimelineMemoryCard({ event, identity, isNew }: TimelineMemoryCar
         itemLabel={event.title}
         itemType="timeline memory"
       />
+      {canManage ? (
+        <MemoryReviewActions
+          targetType="timeline_event"
+          targetId={event.id}
+          itemLabel={event.title}
+          status={event.status}
+          approvalBlockedReason={
+            event.sourceCount === 0
+              ? 'This memory cannot be approved yet because its source information is incomplete.'
+              : null
+          }
+          activeMutation={activeMutation}
+          onMutate={onMutate}
+        />
+      ) : null}
     </article>
   );
 }

@@ -25,6 +25,11 @@ import {
   type ConflictNotice,
 } from './components/conflicts/ConflictReviewList.js';
 import { PendingMemoryList } from './components/memory/PendingMemoryList.js';
+import type {
+  ActiveMemoryMutation,
+  MemoryMutationAction,
+  MemoryMutationNotice,
+} from './components/memory/MemoryReviewActions.js';
 import { ProcessingStatus } from './components/memory/ProcessingStatus.js';
 import {
   captureMemoryItemIds,
@@ -69,6 +74,7 @@ export function SimulatorApp({
   const [inspectorError, setInspectorError] = useState<string | null>(null);
   const inspectorRequestRef = useRef(0);
   const conflictMutationRef = useRef(0);
+  const memoryMutationRef = useRef(0);
   const processingRunRef = useRef(0);
   const processingAbortRef = useRef<AbortController | null>(null);
   const processingBaselineRef = useRef<MemoryItemIds | null>(null);
@@ -77,11 +83,18 @@ export function SimulatorApp({
   const [activeConflictResolution, setActiveConflictResolution] =
     useState<ActiveConflictResolution | null>(null);
   const [conflictNotice, setConflictNotice] = useState<ConflictNotice | null>(null);
+  const [activeMemoryMutation, setActiveMemoryMutation] = useState<ActiveMemoryMutation | null>(
+    null,
+  );
+  const [memoryMutationNotice, setMemoryMutationNotice] = useState<MemoryMutationNotice | null>(
+    null,
+  );
 
   useEffect(
     () => () => {
       inspectorRequestRef.current += 1;
       conflictMutationRef.current += 1;
+      memoryMutationRef.current += 1;
       processingRunRef.current += 1;
       processingAbortRef.current?.abort();
       void client.disconnect();
@@ -93,6 +106,7 @@ export function SimulatorApp({
     const isReconnect = connectionStatus === 'connected' || connectionStatus === 'error';
     cancelProcessing();
     cancelConflictMutation();
+    cancelMemoryMutation();
     inspectorRequestRef.current += 1;
     setStoryContext(null);
     setConflicts(null);
@@ -267,6 +281,81 @@ export function SimulatorApp({
     setConflictNotice(null);
   }
 
+  function cancelMemoryMutation(): void {
+    memoryMutationRef.current += 1;
+    setActiveMemoryMutation(null);
+    setMemoryMutationNotice(null);
+  }
+
+  async function mutateMemory(
+    targetType: ActiveMemoryMutation['targetType'],
+    targetId: string,
+    action: MemoryMutationAction,
+  ): Promise<void> {
+    if (inspectorActor !== 'rosa' || connectionStatus !== 'connected') {
+      setMemoryMutationNotice({
+        kind: 'error',
+        message: 'Switch to Rosa’s narrator view before changing this memory.',
+      });
+      return;
+    }
+
+    const mutationId = memoryMutationRef.current + 1;
+    memoryMutationRef.current = mutationId;
+    setActiveMemoryMutation({ targetType, targetId, action });
+    setMemoryMutationNotice(null);
+
+    try {
+      const result =
+        action === 'remove'
+          ? await client.deletePendingMemory({
+              familyId: storyKeeperDemoIds.familyId,
+              actorPersonId: storyKeeperDemoIds.rosaPersonId,
+              targetType,
+              targetId,
+            })
+          : await client.approveStoryItem({
+              familyId: storyKeeperDemoIds.familyId,
+              actorPersonId: storyKeeperDemoIds.rosaPersonId,
+              targetType,
+              targetId,
+              action,
+            });
+      if (memoryMutationRef.current !== mutationId) return;
+
+      const refreshed = await loadInspector('rosa', interviewId);
+      if (memoryMutationRef.current !== mutationId) return;
+      if (!refreshed) {
+        setMemoryMutationNotice({
+          kind: 'error',
+          message:
+            'Your change was saved, but the latest story state could not be refreshed. Reconnect before continuing.',
+        });
+        return;
+      }
+      setMemoryMutationNotice({
+        kind: 'success',
+        message: memoryMutationSuccessMessage(action, result.status),
+      });
+    } catch (caught: unknown) {
+      if (memoryMutationRef.current !== mutationId) return;
+      if (caught instanceof StoryKeeperClientError && caught.code === 'story_item_state') {
+        const refreshed = await loadInspector('rosa', interviewId);
+        if (memoryMutationRef.current !== mutationId) return;
+        setMemoryMutationNotice({
+          kind: 'error',
+          message: refreshed
+            ? 'This memory changed since you opened it. We’ve refreshed the latest story state.'
+            : 'This memory changed since you opened it, but the latest story state could not be refreshed. Reconnect before continuing.',
+        });
+      } else {
+        setMemoryMutationNotice({ kind: 'error', message: memoryMutationErrorMessage(caught) });
+      }
+    } finally {
+      if (memoryMutationRef.current === mutationId) setActiveMemoryMutation(null);
+    }
+  }
+
   async function resolveConflict(
     contradictionId: string,
     resolutionType: ContradictionResolutionType,
@@ -376,6 +465,7 @@ export function SimulatorApp({
   function changeInspectorActor(actor: InspectorActor): void {
     cancelProcessing();
     cancelConflictMutation();
+    cancelMemoryMutation();
     setInspectorActor(actor);
     setNotice(
       actor === 'rosa'
@@ -538,14 +628,21 @@ export function SimulatorApp({
               void resolveConflict(contradictionId, resolutionType);
             }}
           />
-          <PendingMemoryList
-            context={storyContext}
-            highlightedIds={newMemoryIds}
-            connected={isConnected}
-            loading={inspectorStatus === 'loading'}
-          />
         </>
       ) : null}
+
+      <PendingMemoryList
+        context={storyContext}
+        highlightedIds={newMemoryIds}
+        connected={isConnected}
+        loading={inspectorStatus === 'loading'}
+        canManage={inspectorActor === 'rosa'}
+        activeMutation={activeMemoryMutation}
+        notice={memoryMutationNotice}
+        onMutate={(targetType, targetId, action) => {
+          void mutateMemory(targetType, targetId, action);
+        }}
+      />
 
       <DeveloperMemoryInspector
         actor={inspectorActor}
@@ -595,4 +692,51 @@ function conflictErrorMessage(caught: unknown): string {
     return 'That resolution is not available for this conflict.';
   }
   return 'Story Keeper could not resolve this conflict. No story state was changed here.';
+}
+
+function memoryMutationSuccessMessage(
+  action: MemoryMutationAction,
+  status: 'updated' | 'already_applied' | 'deleted' | 'already_deleted',
+): string {
+  const replayed = status === 'already_applied' || status === 'already_deleted';
+  if (action === 'approve') {
+    return replayed
+      ? 'This memory was already approved. Story Keeper refreshed the latest story state.'
+      : 'Memory approved. Story Keeper refreshed the latest story state.';
+  }
+  if (action === 'reject') {
+    return replayed
+      ? 'This memory was already rejected. Story Keeper refreshed the latest story state.'
+      : 'Memory rejected. Story Keeper refreshed the latest story state.';
+  }
+  if (action === 'revoke') {
+    return replayed
+      ? 'This approval was already revoked. Story Keeper refreshed the latest story state.'
+      : 'Approval revoked. Story Keeper refreshed the latest story state.';
+  }
+  return replayed
+    ? 'This pending memory was already removed. Story Keeper refreshed the latest story state.'
+    : 'Pending memory removed. Story Keeper refreshed the latest story state.';
+}
+
+function memoryMutationErrorMessage(caught: unknown): string {
+  if (!(caught instanceof StoryKeeperClientError)) {
+    return 'Story Keeper could not change this memory. No story state was changed here.';
+  }
+  if (caught.code === 'provenance') {
+    return 'This memory cannot be approved yet because its source information is incomplete.';
+  }
+  if (caught.code === 'identity') {
+    return 'This relationship cannot be approved until its person references are resolved.';
+  }
+  if (caught.code === 'authorization') {
+    return 'This family member is not authorized to change Rosa’s memories.';
+  }
+  if (caught.code === 'unavailable') {
+    return 'The connection was interrupted. Refresh the latest story state before trying again.';
+  }
+  if (caught.code === 'validation') {
+    return 'That memory action is not available.';
+  }
+  return 'Story Keeper could not change this memory. No story state was changed here.';
 }

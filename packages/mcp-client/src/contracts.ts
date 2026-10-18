@@ -1,9 +1,12 @@
 import {
+  approvalActionSchema,
+  approvalTargetTypeSchema,
   approximateDateSchema,
   contradictionResolutionTypeSchema,
   maximumRawAnswerLength,
   presentationReadInputSchema,
   relationshipTypeSchema,
+  storyItemTargetTypeSchema,
   storyItemStatusSchema,
   storyContextPersonIdentitySchema,
   timelineResponseSchema,
@@ -176,6 +179,36 @@ export const resolveConflictResultSchema = z.object({
   resolvedAt: z.iso.datetime(),
 });
 
+export const approveStoryItemInputSchema = z.object({
+  familyId: opaqueIdSchema,
+  actorPersonId: opaqueIdSchema,
+  targetType: approvalTargetTypeSchema,
+  targetId: opaqueIdSchema,
+  action: approvalActionSchema,
+});
+
+export const approveStoryItemResultSchema = z.object({
+  targetType: approvalTargetTypeSchema,
+  targetId: opaqueIdSchema,
+  action: approvalActionSchema,
+  status: z.enum(['updated', 'already_applied']),
+  itemStatus: z.enum(['approved', 'rejected']),
+});
+
+export const deletePendingMemoryInputSchema = z.object({
+  familyId: opaqueIdSchema,
+  actorPersonId: opaqueIdSchema,
+  targetType: storyItemTargetTypeSchema,
+  targetId: opaqueIdSchema,
+});
+
+export const deletePendingMemoryResultSchema = z.object({
+  targetType: storyItemTargetTypeSchema,
+  targetId: opaqueIdSchema,
+  status: z.enum(['deleted', 'already_deleted']),
+  itemStatus: z.literal('rejected'),
+});
+
 export { presentationReadInputSchema, timelineResponseSchema };
 
 export type StartInterviewInput = z.infer<typeof startInterviewInputSchema>;
@@ -190,3 +223,7 @@ export type ListPendingConflictsInput = z.infer<typeof listPendingConflictsInput
 export type ListPendingConflictsResult = z.infer<typeof listPendingConflictsResultSchema>;
 export type ResolveConflictInput = z.infer<typeof resolveConflictInputSchema>;
 export type ResolveConflictResult = z.infer<typeof resolveConflictResultSchema>;
+export type ApproveStoryItemInput = z.infer<typeof approveStoryItemInputSchema>;
+export type ApproveStoryItemResult = z.infer<typeof approveStoryItemResultSchema>;
+export type DeletePendingMemoryInput = z.infer<typeof deletePendingMemoryInputSchema>;
+export type DeletePendingMemoryResult = z.infer<typeof deletePendingMemoryResultSchema>;

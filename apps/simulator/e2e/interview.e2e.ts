@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 test.use({ viewport: { width: 820, height: 900 } });
 
-test('Rosa resolves a conflict while private memory details remain scoped from Maya', async ({
+test('Rosa resolves, approves, and removes memories while Maya stays approved-only', async ({
   page,
 }, testInfo) => {
   const consoleErrors: string[] = [];
@@ -40,7 +40,7 @@ test('Rosa resolves a conflict while private memory details remain scoped from M
   await expect(page.getByLabel('Rosa’s answer')).toHaveValue('');
   await expect(page.getByText(rawAnswer, { exact: true })).not.toBeVisible();
   await expect(page.getByText('New structured memory is ready.')).toBeVisible();
-  const pendingMemory = page.getByRole('region', { name: 'Memories waiting for review' });
+  const pendingMemory = page.getByRole('region', { name: 'Review story memories' });
   await expect(pendingMemory.getByText('The garden gate in the evening breeze')).toBeVisible();
   await expect(
     pendingMemory.getByRole('heading', { name: 'Possible child relationship' }),
@@ -85,7 +85,7 @@ test('Rosa resolves a conflict while private memory details remain scoped from M
   await expect(factCard.getByText('Supported by 1 interview source.')).toBeVisible();
   await expect(factCard.getByText('Story item: Fact')).toBeVisible();
   await expect(pendingMemory.getByText(/From Rosa’s interview/)).toHaveCount(0);
-  await page.screenshot({ path: testInfo.outputPath('phase-5-820.png'), fullPage: true });
+  await page.screenshot({ path: testInfo.outputPath('phase-6-820.png'), fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   );
@@ -93,7 +93,7 @@ test('Rosa resolves a conflict while private memory details remain scoped from M
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   );
-  await page.screenshot({ path: testInfo.outputPath('phase-5-1440.png'), fullPage: true });
+  await page.screenshot({ path: testInfo.outputPath('phase-6-1440.png'), fullPage: true });
   await page.setViewportSize({ width: 820, height: 900 });
 
   await conflictReview.getByRole('button', { name: 'Keep the first memory' }).focus();
@@ -120,9 +120,26 @@ test('Rosa resolves a conflict while private memory details remain scoped from M
   const survivingFact = pendingMemory
     .getByRole('heading', { name: 'Favorite place' })
     .locator('..');
-  await expect(survivingFact.getByText('Pending memory')).toBeVisible();
+  await expect(survivingFact.getByText('Pending memory', { exact: true })).toBeVisible();
   await survivingFact.getByText('Source details').click();
   await expect(survivingFact.getByText('Supported by 1 interview source.')).toBeVisible();
+
+  const gardenSound = pendingMemory.getByRole('heading', { name: 'Garden sound' }).locator('..');
+  await gardenSound.getByRole('button', { name: 'Approve Garden sound' }).focus();
+  await page.keyboard.press('Enter');
+  await expect(
+    pendingMemory.getByText('Memory approved. Story Keeper refreshed the latest story state.'),
+  ).toBeVisible();
+  const approvedGardenSound = pendingMemory
+    .getByRole('heading', { name: 'Garden sound' })
+    .locator('..');
+  await expect(approvedGardenSound.getByText('Approved memory')).toBeVisible();
+  await expect(
+    approvedGardenSound.getByRole('button', { name: 'Revoke approval for Garden sound' }),
+  ).toBeVisible();
+  await expect(
+    approvedGardenSound.getByRole('button', { name: /Remove pending memory/i }),
+  ).toHaveCount(0);
   const nextQuestion = await page.locator('.current-question').textContent();
   expect(nextQuestion).toBeTruthy();
   expect(nextQuestion).not.toBe(firstQuestion);
@@ -153,13 +170,55 @@ test('Rosa resolves a conflict while private memory details remain scoped from M
   await expect(page.getByText('Raj', { exact: true })).not.toBeVisible();
   await expect(page.getByText('Devika', { exact: true })).not.toBeVisible();
   await expect(page.getByText(/Possible person|remains unresolved/)).not.toBeVisible();
-  await expect(page.getByText(/Supported by .* interview source/)).not.toBeVisible();
+  await expect(page.getByText(/From Rosa’s interview/)).toHaveCount(0);
   await expect(page.getByText(/Viewing as/)).toContainText('Maya');
   await expect(page.getByText(/Approved family view/)).toBeVisible();
-  await expect(page.getByText('Moved near the old market')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Moved near the old market' })).toBeVisible();
+  const mayaFamilyMemory = page.getByRole('region', { name: 'Approved family memories' });
+  const mayaGardenSound = mayaFamilyMemory
+    .getByRole('heading', { name: 'Garden sound' })
+    .locator('..');
+  await expect(mayaGardenSound.getByText('The garden gate in the evening breeze')).toBeVisible();
+  await expect(mayaGardenSound.getByText('Approved memory')).toBeVisible();
+  await mayaGardenSound.getByText('Source details').click();
+  await expect(mayaGardenSound.getByText('Supported by 1 interview source.')).toBeVisible();
+  await expect(
+    mayaFamilyMemory.getByRole('button', { name: /approve|reject|revoke|remove/i }),
+  ).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   );
+
+  await page.getByLabel('Inspect memory as').selectOption('rosa');
+  await expect(page.getByText('Viewing Rosa’s narrator memory.')).toBeVisible();
+  const rosaMemoryAfterReturn = page.getByRole('region', { name: 'Review story memories' });
+  const eveningEvent = rosaMemoryAfterReturn
+    .getByRole('heading', { name: 'Evenings by the garden gate' })
+    .locator('..');
+  await eveningEvent
+    .getByRole('button', { name: 'Remove pending memory Evenings by the garden gate' })
+    .focus();
+  await page.keyboard.press('Enter');
+  await expect(
+    rosaMemoryAfterReturn.getByRole('heading', {
+      name: 'Remove pending memory Evenings by the garden gate?',
+    }),
+  ).toBeVisible();
+  await eveningEvent
+    .getByRole('button', {
+      name: 'Confirm pending memory removal for Evenings by the garden gate',
+    })
+    .focus();
+  await page.keyboard.press('Enter');
+  await expect(
+    rosaMemoryAfterReturn.getByText(
+      'Pending memory removed. Story Keeper refreshed the latest story state.',
+    ),
+  ).toBeVisible();
+  await expect(
+    rosaMemoryAfterReturn.getByRole('heading', { name: 'Evenings by the garden gate' }),
+  ).toHaveCount(0);
+  await expect(rosaMemoryAfterReturn.getByRole('heading', { name: 'Garden sound' })).toBeVisible();
 
   await page.reload();
   await page.getByRole('button', { name: 'Connect' }).focus();

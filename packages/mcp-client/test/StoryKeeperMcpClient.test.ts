@@ -77,6 +77,25 @@ function baseSession() {
             resolvedAt: '2026-01-01T00:00:00.000Z',
           }),
         );
+      if (name === 'approve_story_item')
+        return Promise.resolve(
+          result({
+            targetType: 'fact',
+            targetId: candidatePersonId,
+            action: 'approve',
+            status: 'updated',
+            itemStatus: 'approved',
+          }),
+        );
+      if (name === 'delete_pending_memory')
+        return Promise.resolve(
+          result({
+            targetType: 'fact',
+            targetId: candidatePersonId,
+            status: 'deleted',
+            itemStatus: 'rejected',
+          }),
+        );
       return Promise.resolve(result({ items: [] }));
     }),
     close: vi.fn(() => Promise.resolve()),
@@ -121,6 +140,23 @@ describe('StoryKeeperMcpClient', () => {
         resolutionType: 'keep_left',
       }),
     ).resolves.toMatchObject({ status: 'resolved', resolutionType: 'keep_left' });
+    await expect(
+      client.approveStoryItem({
+        familyId,
+        actorPersonId: personId,
+        targetType: 'fact',
+        targetId: candidatePersonId,
+        action: 'approve',
+      }),
+    ).resolves.toMatchObject({ status: 'updated', itemStatus: 'approved' });
+    await expect(
+      client.deletePendingMemory({
+        familyId,
+        actorPersonId: personId,
+        targetType: 'fact',
+        targetId: candidatePersonId,
+      }),
+    ).resolves.toMatchObject({ status: 'deleted', itemStatus: 'rejected' });
     await expect(client.getTimeline({ familyId, actorPersonId: mayaPersonId })).resolves.toEqual({
       items: [],
     });
@@ -224,6 +260,47 @@ describe('StoryKeeperMcpClient', () => {
         'That resolution is not available for this conflict.',
       ),
     );
+  });
+
+  it.each([
+    ['STORY_ITEM_STATE_CONFLICT', 'story_item_state', 'This memory changed since it was loaded.'],
+    [
+      'STORY_ITEM_PROVENANCE_REQUIRED',
+      'provenance',
+      'This memory cannot be approved yet because its source information is incomplete.',
+    ],
+    [
+      'STORY_ITEM_IDENTITY_UNRESOLVED',
+      'identity',
+      'This relationship cannot be approved until its person references are resolved.',
+    ],
+    [
+      'STORY_ITEM_NOT_RELEVANT',
+      'authorization',
+      'This family member is not authorized to change that memory.',
+    ],
+  ] as const)('maps %s to a safe approval error', async (serverCode, code, message) => {
+    const session = {
+      ...baseSession(),
+      callTool: vi.fn(() =>
+        Promise.resolve({
+          isError: true,
+          content: [{ type: 'text' as const, text: `${serverCode}: private backend details` }],
+        }),
+      ),
+    };
+    const client = new StoryKeeperMcpClient(endpoint, () => session);
+    await client.connect();
+
+    await expect(
+      client.approveStoryItem({
+        familyId,
+        actorPersonId: personId,
+        targetType: 'fact',
+        targetId: candidatePersonId,
+        action: 'approve',
+      }),
+    ).rejects.toEqual(new StoryKeeperClientError(code, message));
   });
 
   it('resolves relative and absolute endpoints centrally', () => {

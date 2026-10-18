@@ -4,12 +4,21 @@ import { FactCard } from './FactCard.js';
 import { IdentityClarificationList } from './IdentityClarificationList.js';
 import { RelationshipCard } from './RelationshipCard.js';
 import { TimelineMemoryCard } from './TimelineMemoryCard.js';
+import type {
+  ActiveMemoryMutation,
+  MemoryMutationNotice,
+  MutateMemory,
+} from './MemoryReviewActions.js';
 
 interface PendingMemoryListProps {
   readonly context: GetStoryContextResult | null;
   readonly highlightedIds: ReadonlySet<string>;
   readonly connected: boolean;
   readonly loading: boolean;
+  readonly canManage: boolean;
+  readonly activeMutation: ActiveMemoryMutation | null;
+  readonly notice: MemoryMutationNotice | null;
+  readonly onMutate: MutateMemory;
 }
 
 export function PendingMemoryList({
@@ -17,35 +26,58 @@ export function PendingMemoryList({
   highlightedIds,
   connected,
   loading,
+  canManage,
+  activeMutation,
+  notice,
+  onMutate,
 }: PendingMemoryListProps) {
-  const facts = context?.facts.filter((item) => item.status === 'pending') ?? [];
-  const relationships = context?.relationships.filter((item) => item.status === 'pending') ?? [];
-  const events = context?.timelineEvents.filter((item) => item.status === 'pending') ?? [];
+  const facts = context?.facts ?? [];
+  const relationships = context?.relationships ?? [];
+  const events = context?.timelineEvents ?? [];
   const identities = context?.personIdentities ?? [];
   const identityByPersonId = new Map(identities.map((identity) => [identity.personId, identity]));
   const unresolvedCount = identities.filter((identity) => identity.status === 'unresolved').length;
   const itemCount = facts.length + relationships.length + events.length;
+  const pendingCount = [...facts, ...relationships, ...events].filter(
+    (item) => item.status === 'pending',
+  ).length;
+  const title = canManage ? 'Review story memories' : 'Approved family memories';
 
   return (
     <section className="pending-memory" aria-labelledby="pending-memory-title">
       <div className="pending-memory-heading">
         <div>
-          <p className="panel-label">Narrator review</p>
-          <h2 id="pending-memory-title">Memories waiting for review</h2>
+          <p className="panel-label">{canManage ? 'Narrator review' : 'Family story'}</p>
+          <h2 id="pending-memory-title">{title}</h2>
         </div>
-        {itemCount > 0 ? <span>{itemCount} pending</span> : null}
+        {canManage && pendingCount > 0 ? <span>{pendingCount} waiting</span> : null}
+        {!canManage && itemCount > 0 ? <span>{itemCount} approved</span> : null}
       </div>
 
-      {!connected ? (
-        <p className="memory-empty">Connect to load Rosa’s structured memory.</p>
-      ) : null}
+      {notice === null ? null : (
+        <p
+          className="memory-mutation-notice"
+          data-kind={notice.kind}
+          role={notice.kind === 'error' ? 'alert' : 'status'}
+        >
+          {notice.message}
+        </p>
+      )}
+
+      {!connected ? <p className="memory-empty">Connect to load family story memory.</p> : null}
       {connected && loading && context === null ? (
-        <p className="memory-empty">Loading Rosa’s structured memory…</p>
+        <p className="memory-empty">Loading family story memory…</p>
       ) : null}
       {connected && !loading && itemCount === 0 && unresolvedCount === 0 ? (
-        <p className="memory-empty">No structured memory is visible yet.</p>
+        <p className="memory-empty">
+          {canManage
+            ? 'No memories are waiting for approval right now.'
+            : 'No approved family memories are available yet.'}
+        </p>
       ) : null}
-      <IdentityClarificationList identities={identities} highlightedIds={highlightedIds} />
+      {canManage ? (
+        <IdentityClarificationList identities={identities} highlightedIds={highlightedIds} />
+      ) : null}
       {itemCount > 0 ? (
         <div className="memory-card-grid">
           {facts.map((fact) => (
@@ -54,6 +86,9 @@ export function PendingMemoryList({
               fact={fact}
               identity={identityByPersonId.get(fact.subjectPersonId)}
               isNew={highlightedIds.has(fact.id)}
+              canManage={canManage}
+              activeMutation={activeMutation}
+              onMutate={onMutate}
             />
           ))}
           {relationships.map((relationship) => (
@@ -63,6 +98,9 @@ export function PendingMemoryList({
               fromIdentity={identityByPersonId.get(relationship.fromPersonId)}
               toIdentity={identityByPersonId.get(relationship.toPersonId)}
               isNew={highlightedIds.has(relationship.id)}
+              canManage={canManage}
+              activeMutation={activeMutation}
+              onMutate={onMutate}
             />
           ))}
           {events.map((event) => (
@@ -71,6 +109,9 @@ export function PendingMemoryList({
               event={event}
               identity={identityByPersonId.get(event.subjectPersonId)}
               isNew={highlightedIds.has(event.id)}
+              canManage={canManage}
+              activeMutation={activeMutation}
+              onMutate={onMutate}
             />
           ))}
         </div>
