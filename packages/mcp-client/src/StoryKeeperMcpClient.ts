@@ -13,6 +13,8 @@ import {
   listPendingConflictsInputSchema,
   listPendingConflictsResultSchema,
   presentationReadInputSchema,
+  resolveConflictInputSchema,
+  resolveConflictResultSchema,
   saveAnswerInputSchema,
   saveAnswerResultSchema,
   startInterviewInputSchema,
@@ -24,6 +26,8 @@ import {
   type GetStoryContextResult,
   type ListPendingConflictsInput,
   type ListPendingConflictsResult,
+  type ResolveConflictInput,
+  type ResolveConflictResult,
   type SaveAnswerInput,
   type SaveAnswerResult,
   type StartInterviewInput,
@@ -56,6 +60,7 @@ export type StoryKeeperClientErrorCode =
   | 'tool_contract'
   | 'validation'
   | 'authorization'
+  | 'conflict_state'
   | 'interview_state'
   | 'unexpected';
 
@@ -78,6 +83,7 @@ export interface StoryKeeperClient {
   saveAnswer(input: SaveAnswerInput): Promise<SaveAnswerResult>;
   getStoryContext(input: GetStoryContextInput): Promise<GetStoryContextResult>;
   listPendingConflicts(input: ListPendingConflictsInput): Promise<ListPendingConflictsResult>;
+  resolveConflict(input: ResolveConflictInput): Promise<ResolveConflictResult>;
   getTimeline(input: PresentationReadInput): Promise<TimelineResponse>;
 }
 
@@ -171,6 +177,15 @@ export class StoryKeeperMcpClient implements StoryKeeperClient {
       'list_pending_conflicts',
       listPendingConflictsInputSchema,
       listPendingConflictsResultSchema,
+      input,
+    );
+  }
+
+  public resolveConflict(input: ResolveConflictInput): Promise<ResolveConflictResult> {
+    return this.callValidatedTool(
+      'resolve_conflict',
+      resolveConflictInputSchema,
+      resolveConflictResultSchema,
       input,
     );
   }
@@ -287,6 +302,18 @@ function mapToolError(result: CallToolResult): StoryKeeperClientError {
     return new StoryKeeperClientError(
       'interview_state',
       'The interview state changed. Resume the interview and try again.',
+    );
+  }
+  if (serverCode === 'CONFLICT_ALREADY_RESOLVED' || serverCode === 'CONTRADICTION_NOT_FOUND') {
+    return new StoryKeeperClientError(
+      'conflict_state',
+      'This conflict changed since it was loaded.',
+    );
+  }
+  if (serverCode === 'INVALID_CONFLICT_RESOLUTION') {
+    return new StoryKeeperClientError(
+      'validation',
+      'That resolution is not available for this conflict.',
     );
   }
   if (serverCode?.includes('VALIDATION') === true)

@@ -67,6 +67,16 @@ function baseSession() {
           }),
         );
       if (name === 'list_pending_conflicts') return Promise.resolve(result({ conflicts: [] }));
+      if (name === 'resolve_conflict')
+        return Promise.resolve(
+          result({
+            contradictionId: candidatePersonId,
+            status: 'resolved',
+            resolutionType: 'keep_left',
+            resolvedByPersonId: personId,
+            resolvedAt: '2026-01-01T00:00:00.000Z',
+          }),
+        );
       return Promise.resolve(result({ items: [] }));
     }),
     close: vi.fn(() => Promise.resolve()),
@@ -103,6 +113,14 @@ describe('StoryKeeperMcpClient', () => {
     await expect(client.listPendingConflicts({ familyId, interviewId })).resolves.toEqual({
       conflicts: [],
     });
+    await expect(
+      client.resolveConflict({
+        familyId,
+        interviewId,
+        contradictionId: candidatePersonId,
+        resolutionType: 'keep_left',
+      }),
+    ).resolves.toMatchObject({ status: 'resolved', resolutionType: 'keep_left' });
     await expect(client.getTimeline({ familyId, actorPersonId: mayaPersonId })).resolves.toEqual({
       items: [],
     });
@@ -147,6 +165,65 @@ describe('StoryKeeperMcpClient', () => {
     await expect(
       client.getTimeline({ familyId, actorPersonId: mayaPersonId }),
     ).rejects.toMatchObject({ code: 'protocol' });
+  });
+
+  it('maps conflict state and invalid-resolution errors to safe categories', async () => {
+    const staleSession = {
+      ...baseSession(),
+      callTool: vi.fn(() =>
+        Promise.resolve({
+          isError: true,
+          content: [
+            {
+              type: 'text' as const,
+              text: 'CONFLICT_ALREADY_RESOLVED: private backend details',
+            },
+          ],
+        }),
+      ),
+    };
+    const staleClient = new StoryKeeperMcpClient(endpoint, () => staleSession);
+    await staleClient.connect();
+    await expect(
+      staleClient.resolveConflict({
+        familyId,
+        interviewId,
+        contradictionId: candidatePersonId,
+        resolutionType: 'keep_right',
+      }),
+    ).rejects.toEqual(
+      new StoryKeeperClientError('conflict_state', 'This conflict changed since it was loaded.'),
+    );
+
+    const invalidSession = {
+      ...baseSession(),
+      callTool: vi.fn(() =>
+        Promise.resolve({
+          isError: true,
+          content: [
+            {
+              type: 'text' as const,
+              text: 'INVALID_CONFLICT_RESOLUTION: private backend details',
+            },
+          ],
+        }),
+      ),
+    };
+    const invalidClient = new StoryKeeperMcpClient(endpoint, () => invalidSession);
+    await invalidClient.connect();
+    await expect(
+      invalidClient.resolveConflict({
+        familyId,
+        interviewId,
+        contradictionId: candidatePersonId,
+        resolutionType: 'different_events',
+      }),
+    ).rejects.toEqual(
+      new StoryKeeperClientError(
+        'validation',
+        'That resolution is not available for this conflict.',
+      ),
+    );
   });
 
   it('resolves relative and absolute endpoints centrally', () => {

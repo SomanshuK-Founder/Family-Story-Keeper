@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 test.use({ viewport: { width: 820, height: 900 } });
 
-test('Rosa sees provenance and unresolved identity without leaking either to Maya', async ({
+test('Rosa resolves a conflict while private memory details remain scoped from Maya', async ({
   page,
 }, testInfo) => {
   const consoleErrors: string[] = [];
@@ -71,16 +71,58 @@ test('Rosa sees provenance and unresolved identity without leaking either to May
   await expect(pendingMemory.getByText(/person reference needs clarification/)).toBeVisible();
   await expect(pendingMemory.getByText(/Both people are confirmed references/)).toBeVisible();
 
+  const conflictReview = page.getByRole('region', { name: 'Memories that need review' });
+  await expect(conflictReview.getByRole('heading', { name: 'Possible conflict 1' })).toBeVisible();
+  await expect(conflictReview.getByText('The private garden', { exact: true })).toBeVisible();
+  await expect(conflictReview.getByText('The old market square', { exact: true })).toBeVisible();
+  await expect(
+    conflictReview.getByRole('button', { name: 'These were different events' }),
+  ).toHaveCount(0);
+
   const factCard = pendingMemory.getByRole('heading', { name: 'Garden sound' }).locator('..');
   await factCard.getByText('Source details').focus();
   await page.keyboard.press('Enter');
   await expect(factCard.getByText('Supported by 1 interview source.')).toBeVisible();
   await expect(factCard.getByText('Story item: Fact')).toBeVisible();
   await expect(pendingMemory.getByText(/From Rosa’s interview/)).toHaveCount(0);
-  await page.screenshot({ path: testInfo.outputPath('phase-4-820.png'), fullPage: true });
+  await page.screenshot({ path: testInfo.outputPath('phase-5-820.png'), fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   );
+  await page.setViewportSize({ width: 1440, height: 900 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  await page.screenshot({ path: testInfo.outputPath('phase-5-1440.png'), fullPage: true });
+  await page.setViewportSize({ width: 820, height: 900 });
+
+  await conflictReview.getByRole('button', { name: 'Keep the first memory' }).focus();
+  await page.keyboard.press('Enter');
+  const confirmationHeading = conflictReview.getByRole('heading', {
+    name: 'Keep the first memory?',
+  });
+  await expect(confirmationHeading).toBeVisible();
+  await expect(
+    conflictReview.getByText(/second pending memory will be marked rejected/i),
+  ).toBeVisible();
+  await expect(conflictReview.getByText(/does not approve either memory/i)).toBeVisible();
+  await conflictReview.getByRole('button', { name: 'Confirm: Keep the first memory' }).focus();
+  await page.keyboard.press('Enter');
+  await expect(
+    conflictReview.getByText('No memories need conflict review right now.'),
+  ).toBeVisible();
+  await expect(
+    conflictReview.getByText('Conflict resolved. Story Keeper refreshed the latest story state.'),
+  ).toBeVisible();
+  await expect(pendingMemory.getByRole('heading', { name: 'Favorite place' })).toHaveCount(1);
+  await expect(pendingMemory.getByText('The private garden', { exact: true })).toBeVisible();
+  await expect(pendingMemory.getByText('The old market square', { exact: true })).toHaveCount(0);
+  const survivingFact = pendingMemory
+    .getByRole('heading', { name: 'Favorite place' })
+    .locator('..');
+  await expect(survivingFact.getByText('Pending memory')).toBeVisible();
+  await survivingFact.getByText('Source details').click();
+  await expect(survivingFact.getByText('Supported by 1 interview source.')).toBeVisible();
   const nextQuestion = await page.locator('.current-question').textContent();
   expect(nextQuestion).toBeTruthy();
   expect(nextQuestion).not.toBe(firstQuestion);
@@ -107,6 +149,7 @@ test('Rosa sees provenance and unresolved identity without leaking either to May
   await expect(page.getByText(/organizing the memory/i)).not.toBeVisible();
   await expect(page.getByText('The private garden')).not.toBeVisible();
   await expect(page.getByRole('heading', { name: 'Needs clarification' })).not.toBeVisible();
+  await expect(page.getByRole('region', { name: 'Memories that need review' })).not.toBeVisible();
   await expect(page.getByText('Raj', { exact: true })).not.toBeVisible();
   await expect(page.getByText('Devika', { exact: true })).not.toBeVisible();
   await expect(page.getByText(/Possible person|remains unresolved/)).not.toBeVisible();
@@ -128,13 +171,13 @@ test('Rosa sees provenance and unresolved identity without leaking either to May
   await page.getByRole('button', { name: 'Start / Resume interview' }).focus();
   await page.keyboard.press('Enter');
   await expect(page.locator('.current-question')).toHaveText(nextQuestion ?? '');
+  await expect(page.getByText('No memories need conflict review right now.')).toBeVisible();
 
   await page.setViewportSize({ width: 1440, height: 900 });
   await expect(page.getByRole('heading', { name: 'Needs clarification' })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   );
-  await page.screenshot({ path: testInfo.outputPath('phase-4-1440.png'), fullPage: true });
   await page.goto('http://localhost:4174/');
   await expect(page).toHaveTitle('Story Keeper Timeline');
   await expect(page.locator('vite-error-overlay')).toHaveCount(0);

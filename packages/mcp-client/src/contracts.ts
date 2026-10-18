@@ -1,5 +1,6 @@
 import {
   approximateDateSchema,
+  contradictionResolutionTypeSchema,
   maximumRawAnswerLength,
   presentationReadInputSchema,
   relationshipTypeSchema,
@@ -160,6 +161,21 @@ export const listPendingConflictsResultSchema = z.object({
   ),
 });
 
+export const resolveConflictInputSchema = z.object({
+  familyId: opaqueIdSchema,
+  interviewId: opaqueIdSchema,
+  contradictionId: opaqueIdSchema,
+  resolutionType: contradictionResolutionTypeSchema,
+});
+
+export const resolveConflictResultSchema = z.object({
+  contradictionId: opaqueIdSchema,
+  status: z.enum(['resolved', 'dismissed', 'already_resolved']),
+  resolutionType: contradictionResolutionTypeSchema,
+  resolvedByPersonId: opaqueIdSchema,
+  resolvedAt: z.iso.datetime(),
+});
+
 export { presentationReadInputSchema, timelineResponseSchema };
 
 export type StartInterviewInput = z.infer<typeof startInterviewInputSchema>;
@@ -172,3 +188,5 @@ export type GetStoryContextInput = z.infer<typeof getStoryContextInputSchema>;
 export type GetStoryContextResult = z.infer<typeof getStoryContextResultSchema>;
 export type ListPendingConflictsInput = z.infer<typeof listPendingConflictsInputSchema>;
 export type ListPendingConflictsResult = z.infer<typeof listPendingConflictsResultSchema>;
+export type ResolveConflictInput = z.infer<typeof resolveConflictInputSchema>;
+export type ResolveConflictResult = z.infer<typeof resolveConflictResultSchema>;

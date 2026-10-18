@@ -1,4 +1,8 @@
-import { maximumRawAnswerLength, storyKeeperDemoIds } from '@story-keeper/shared';
+import {
+  maximumRawAnswerLength,
+  storyKeeperDemoIds,
+  type ContradictionResolutionType,
+} from '@story-keeper/shared';
 import { AppShell } from '@story-keeper/ui';
 import { useEffect, useRef, useState, type SyntheticEvent } from 'react';
 
@@ -15,6 +19,11 @@ import {
   DeveloperMemoryInspector,
   type InspectorActor,
 } from './components/DeveloperMemoryInspector.js';
+import {
+  ConflictReviewList,
+  type ActiveConflictResolution,
+  type ConflictNotice,
+} from './components/conflicts/ConflictReviewList.js';
 import { PendingMemoryList } from './components/memory/PendingMemoryList.js';
 import { ProcessingStatus } from './components/memory/ProcessingStatus.js';
 import {
@@ -59,15 +68,20 @@ export function SimulatorApp({
   );
   const [inspectorError, setInspectorError] = useState<string | null>(null);
   const inspectorRequestRef = useRef(0);
+  const conflictMutationRef = useRef(0);
   const processingRunRef = useRef(0);
   const processingAbortRef = useRef<AbortController | null>(null);
   const processingBaselineRef = useRef<MemoryItemIds | null>(null);
   const [processingPhase, setProcessingPhase] = useState<MemoryProcessingPhase>('idle');
   const [newMemoryIds, setNewMemoryIds] = useState<ReadonlySet<string>>(new Set());
+  const [activeConflictResolution, setActiveConflictResolution] =
+    useState<ActiveConflictResolution | null>(null);
+  const [conflictNotice, setConflictNotice] = useState<ConflictNotice | null>(null);
 
   useEffect(
     () => () => {
       inspectorRequestRef.current += 1;
+      conflictMutationRef.current += 1;
       processingRunRef.current += 1;
       processingAbortRef.current?.abort();
       void client.disconnect();
@@ -78,6 +92,7 @@ export function SimulatorApp({
   async function connect(): Promise<void> {
     const isReconnect = connectionStatus === 'connected' || connectionStatus === 'error';
     cancelProcessing();
+    cancelConflictMutation();
     inspectorRequestRef.current += 1;
     setStoryContext(null);
     setConflicts(null);
@@ -246,10 +261,79 @@ export function SimulatorApp({
     setNewMemoryIds(new Set());
   }
 
+  function cancelConflictMutation(): void {
+    conflictMutationRef.current += 1;
+    setActiveConflictResolution(null);
+    setConflictNotice(null);
+  }
+
+  async function resolveConflict(
+    contradictionId: string,
+    resolutionType: ContradictionResolutionType,
+  ): Promise<void> {
+    if (interviewId === null || inspectorActor !== 'rosa' || connectionStatus !== 'connected') {
+      setConflictNotice({
+        kind: 'error',
+        message: 'Resume Rosa’s interview before resolving this conflict.',
+      });
+      return;
+    }
+
+    const mutationId = conflictMutationRef.current + 1;
+    conflictMutationRef.current = mutationId;
+    const activeInterviewId = interviewId;
+    setActiveConflictResolution({ contradictionId, resolutionType });
+    setConflictNotice(null);
+
+    try {
+      const result = await client.resolveConflict({
+        familyId: storyKeeperDemoIds.familyId,
+        interviewId: activeInterviewId,
+        contradictionId,
+        resolutionType,
+      });
+      if (conflictMutationRef.current !== mutationId) return;
+
+      const refreshed = await loadInspector('rosa', activeInterviewId);
+      if (conflictMutationRef.current !== mutationId) return;
+      if (!refreshed) {
+        setConflictNotice({
+          kind: 'error',
+          message:
+            'Your choice was saved, but the latest story state could not be refreshed. Reconnect before continuing.',
+        });
+        return;
+      }
+      setConflictNotice({
+        kind: 'success',
+        message:
+          result.status === 'already_resolved'
+            ? 'That choice was already saved. Story Keeper refreshed the latest story state.'
+            : 'Conflict resolved. Story Keeper refreshed the latest story state.',
+      });
+    } catch (caught: unknown) {
+      if (conflictMutationRef.current !== mutationId) return;
+      if (caught instanceof StoryKeeperClientError && caught.code === 'conflict_state') {
+        const refreshed = await loadInspector('rosa', activeInterviewId);
+        if (conflictMutationRef.current !== mutationId) return;
+        setConflictNotice({
+          kind: 'error',
+          message: refreshed
+            ? 'This conflict changed since you opened it. We’ve refreshed the latest story state.'
+            : 'This conflict changed since you opened it, but the latest story state could not be refreshed. Reconnect before continuing.',
+        });
+      } else {
+        setConflictNotice({ kind: 'error', message: conflictErrorMessage(caught) });
+      }
+    } finally {
+      if (conflictMutationRef.current === mutationId) setActiveConflictResolution(null);
+    }
+  }
+
   async function loadInspector(
     actor: InspectorActor,
     activeInterviewId: string | null,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const requestId = inspectorRequestRef.current + 1;
     inspectorRequestRef.current = requestId;
     setStoryContext(null);
@@ -272,23 +356,26 @@ export function SimulatorApp({
             })
           : Promise.resolve({ conflicts: [] });
       const [nextContext, nextConflicts] = await Promise.all([contextPromise, conflictPromise]);
-      if (inspectorRequestRef.current !== requestId) return;
+      if (inspectorRequestRef.current !== requestId) return false;
       setStoryContext(nextContext);
       setConflicts(nextConflicts.conflicts);
       setInspectorStatus('ready');
+      return true;
     } catch (caught: unknown) {
-      if (inspectorRequestRef.current !== requestId) return;
+      if (inspectorRequestRef.current !== requestId) return false;
       setInspectorStatus('error');
       setInspectorError(
         caught instanceof StoryKeeperClientError
           ? caught.message
           : 'Structured memory could not be loaded. Try again.',
       );
+      return false;
     }
   }
 
   function changeInspectorActor(actor: InspectorActor): void {
     cancelProcessing();
+    cancelConflictMutation();
     setInspectorActor(actor);
     setNotice(
       actor === 'rosa'
@@ -439,12 +526,25 @@ export function SimulatorApp({
       </div>
 
       {inspectorActor === 'rosa' ? (
-        <PendingMemoryList
-          context={storyContext}
-          highlightedIds={newMemoryIds}
-          connected={isConnected}
-          loading={inspectorStatus === 'loading'}
-        />
+        <>
+          <ConflictReviewList
+            conflicts={conflicts}
+            connected={isConnected}
+            interviewReady={interviewId !== null}
+            loading={inspectorStatus === 'loading'}
+            activeResolution={activeConflictResolution}
+            notice={conflictNotice}
+            onResolve={(contradictionId, resolutionType) => {
+              void resolveConflict(contradictionId, resolutionType);
+            }}
+          />
+          <PendingMemoryList
+            context={storyContext}
+            highlightedIds={newMemoryIds}
+            connected={isConnected}
+            loading={inspectorStatus === 'loading'}
+          />
+        </>
       ) : null}
 
       <DeveloperMemoryInspector
@@ -476,4 +576,23 @@ const connectionStatusLabels: Record<ConnectionStatus, string> = {
 function createDefaultClient(): StoryKeeperClient {
   const endpoint = resolveMcpEndpoint(import.meta.env.VITE_MCP_URL, window.location.href);
   return new StoryKeeperMcpClient(endpoint);
+}
+
+function conflictErrorMessage(caught: unknown): string {
+  if (!(caught instanceof StoryKeeperClientError)) {
+    return 'Story Keeper could not resolve this conflict. No story state was changed here.';
+  }
+  if (caught.code === 'unavailable') {
+    return 'The connection was interrupted. Refresh the latest story state before trying again.';
+  }
+  if (caught.code === 'authorization') {
+    return 'This family member is not authorized to resolve Rosa’s conflicts.';
+  }
+  if (caught.code === 'interview_state') {
+    return 'Rosa’s interview changed. Resume it and refresh before trying again.';
+  }
+  if (caught.code === 'validation') {
+    return 'That resolution is not available for this conflict.';
+  }
+  return 'Story Keeper could not resolve this conflict. No story state was changed here.';
 }

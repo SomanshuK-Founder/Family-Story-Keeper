@@ -504,6 +504,157 @@
   color: var(--muted);
   font-size: 0.9rem;
 }
+.conflict-review {
+  margin: 1.5rem auto 0;
+  padding: clamp(1rem, 2.5vw, 1.5rem);
+  background: #fffaf3;
+  border: 1px solid #ddcbb8;
+  border-radius: 1rem;
+}
+.conflict-review-heading,
+.conflict-card-heading {
+  display: flex;
+  gap: 1rem;
+  align-items: start;
+  justify-content: space-between;
+}
+.conflict-review-heading h2,
+.conflict-card-heading h3 {
+  margin: 0;
+  font-family: Georgia, serif;
+}
+.conflict-review-heading h2 {
+  font-size: clamp(1.5rem, 3vw, 2rem);
+}
+.conflict-review-heading > span,
+.conflict-card-heading > span {
+  flex: 0 0 auto;
+  padding: 0.35rem 0.65rem;
+  color: #674720;
+  background: #f7e3bd;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+.conflict-card-list {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+.conflict-card {
+  min-width: 0;
+  padding: clamp(1rem, 2.4vw, 1.4rem);
+  background: var(--surface);
+  border: 1px solid #d5b993;
+  border-radius: 0.85rem;
+}
+.conflict-card-heading h3 {
+  margin-top: 0.35rem;
+  font-size: 1.35rem;
+}
+.conflict-intro {
+  margin: 0.9rem 0 0.35rem;
+  font-weight: 750;
+}
+.conflict-question {
+  max-width: 72ch;
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+.conflict-comparison {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+  margin-top: 1rem;
+}
+.conflict-claim {
+  min-width: 0;
+  padding: 1rem;
+  background: #fffdf9;
+  border: 1px solid var(--border);
+  border-radius: 0.7rem;
+}
+.conflict-claim h4 {
+  margin: 0.4rem 0 0.65rem;
+  font-family: Georgia, serif;
+  font-size: 1.15rem;
+}
+.conflict-claim > p:not(.conflict-memory-label, .claim-state, .memory-date) {
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+.conflict-memory-label {
+  margin: 0;
+  color: var(--accent-dark);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.claim-state {
+  display: inline-block;
+  margin: 0.55rem 0 0;
+  padding: 0.25rem 0.5rem;
+  color: #5c4a35;
+  background: #f1ece4;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 750;
+}
+.conflict-actions {
+  margin-top: 1.1rem;
+}
+.conflict-actions h4,
+.conflict-confirmation h4 {
+  margin: 0 0 0.7rem;
+  font-family: Georgia, serif;
+  font-size: 1.15rem;
+}
+.conflict-action-buttons,
+.confirmation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+.conflict-confirmation {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: #fff5e5;
+  border: 2px solid #cf9f64;
+  border-radius: 0.75rem;
+}
+.conflict-confirmation:focus {
+  outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  outline-offset: 0.2rem;
+}
+.conflict-confirmation p {
+  max-width: 70ch;
+  line-height: 1.5;
+}
+.conflict-submitting {
+  font-weight: 800;
+}
+.conflict-notice,
+.conflict-empty {
+  margin: 1rem 0 0;
+  padding: 0.85rem 1rem;
+  border-radius: 0.7rem;
+}
+.conflict-empty {
+  color: var(--muted);
+  background: #f6f1ea;
+}
+.conflict-notice[data-kind='success'] {
+  color: #2f5338;
+  background: #edf5ea;
+  border: 1px solid #b9d0b4;
+}
+.conflict-notice[data-kind='error'] {
+  color: #662c1f;
+  background: #fff1eb;
+  border: 1px solid #d99c88;
+}
 .error-banner {
   display: grid;
   gap: 0.3rem;
@@ -570,6 +721,9 @@
   .identity-clarification-grid {
     grid-template-columns: 1fr;
   }
+  .conflict-comparison {
+    grid-template-columns: 1fr;
+  }
   .visual-placeholder {
     min-height: 22rem;
   }
@@ -601,8 +755,19 @@
   }
   .processing-status,
   .pending-memory-heading,
-  .identity-clarification-heading {
+  .identity-clarification-heading,
+  .conflict-review-heading,
+  .conflict-card-heading {
     display: grid;
+  }
+  .conflict-action-buttons,
+  .confirmation-actions {
+    display: grid;
+  }
+  .conflict-action-buttons .secondary-button,
+  .confirmation-actions .secondary-button,
+  .confirmation-actions .primary-button {
+    width: 100%;
   }
   .processing-status .secondary-button {
     grid-column: 1;

@@ -7,6 +7,7 @@ import type {
   ListPendingConflictsResult,
   StoryKeeperClient,
 } from '@story-keeper/mcp-client';
+import { StoryKeeperClientError } from '@story-keeper/mcp-client';
 import { storyKeeperDemoIds } from '@story-keeper/shared';
 
 import { SimulatorApp } from './SimulatorApp.js';
@@ -147,6 +148,16 @@ function createClient() {
     ),
     listPendingConflicts: vi.fn<StoryKeeperClient['listPendingConflicts']>(() =>
       Promise.resolve({ conflicts: [] }),
+    ),
+    resolveConflict: vi.fn<StoryKeeperClient['resolveConflict']>(
+      ({ contradictionId, resolutionType }) =>
+        Promise.resolve({
+          contradictionId,
+          status: 'resolved',
+          resolutionType,
+          resolvedByPersonId: storyKeeperDemoIds.rosaPersonId,
+          resolvedAt: '2026-01-01T00:00:00.000Z',
+        }),
     ),
     getTimeline: vi.fn<StoryKeeperClient['getTimeline']>(() => Promise.resolve({ items: [] })),
   } satisfies StoryKeeperClient;
@@ -405,6 +416,178 @@ describe('SimulatorApp', () => {
     render(<SimulatorApp createClient={createClient} />);
     fireEvent.click(screen.getByRole('button', { name: '+3 Days' }));
     expect(screen.getByText('Demo day: +3 days')).toBeInTheDocument();
+  });
+
+  it('confirms a resolution and refreshes conflicts from canonical backend state', async () => {
+    const client = createClient();
+    client.listPendingConflicts = vi
+      .fn<StoryKeeperClient['listPendingConflicts']>()
+      .mockResolvedValueOnce(rosaConflicts)
+      .mockResolvedValue({ conflicts: [] });
+    render(<SimulatorApp createClient={() => client} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    await screen.findByText('15 tools verified');
+    fireEvent.click(screen.getByRole('button', { name: 'Start / Resume interview' }));
+    await screen.findByRole('heading', { name: 'Possible conflict 1' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Keep the first memory' }));
+    expect(client.resolveConflict).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm: Keep the first memory' }));
+
+    expect(
+      await screen.findByText('No memories need conflict review right now.'),
+    ).toBeInTheDocument();
+    const conflictRegion = screen.getByRole('region', { name: 'Memories that need review' });
+    expect(within(conflictRegion).getByRole('status')).toHaveTextContent(
+      'Conflict resolved. Story Keeper refreshed the latest story state.',
+    );
+    expect(client.resolveConflict).toHaveBeenCalledWith({
+      familyId: storyKeeperDemoIds.familyId,
+      interviewId,
+      contradictionId: rosaConflicts.conflicts[0]?.contradictionId,
+      resolutionType: 'keep_left',
+    });
+    expect(client.listPendingConflicts).toHaveBeenCalledTimes(2);
+    expect(screen.getByText('The private garden', { exact: true })).toBeInTheDocument();
+    expect(screen.queryByText('Approved', { exact: true })).not.toBeInTheDocument();
+  });
+
+  it('treats an identical already-resolved replay as a stable canonical result', async () => {
+    const client = createClient();
+    client.listPendingConflicts = vi
+      .fn<StoryKeeperClient['listPendingConflicts']>()
+      .mockResolvedValueOnce(rosaConflicts)
+      .mockResolvedValue({ conflicts: [] });
+    client.resolveConflict = vi.fn<StoryKeeperClient['resolveConflict']>(() =>
+      Promise.resolve({
+        contradictionId: rosaConflicts.conflicts[0]?.contradictionId ?? answerId,
+        status: 'already_resolved',
+        resolutionType: 'keep_left',
+        resolvedByPersonId: storyKeeperDemoIds.rosaPersonId,
+        resolvedAt: '2026-01-01T00:00:00.000Z',
+      }),
+    );
+    render(<SimulatorApp createClient={() => client} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    await screen.findByText('15 tools verified');
+    fireEvent.click(screen.getByRole('button', { name: 'Start / Resume interview' }));
+    await screen.findByRole('heading', { name: 'Possible conflict 1' });
+    fireEvent.click(screen.getByRole('button', { name: 'Keep the first memory' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm: Keep the first memory' }));
+
+    expect(
+      await screen.findByText(
+        'That choice was already saved. Story Keeper refreshed the latest story state.',
+      ),
+    ).toHaveAttribute('role', 'status');
+    expect(screen.getByText('No memories need conflict review right now.')).toBeInTheDocument();
+    expect(client.listPendingConflicts).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not claim canonical refresh succeeded when the post-resolution read fails', async () => {
+    const client = createClient();
+    client.listPendingConflicts = vi
+      .fn<StoryKeeperClient['listPendingConflicts']>()
+      .mockResolvedValueOnce(rosaConflicts)
+      .mockRejectedValueOnce(new StoryKeeperClientError('unavailable', 'Connection interrupted.'));
+    render(<SimulatorApp createClient={() => client} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    await screen.findByText('15 tools verified');
+    fireEvent.click(screen.getByRole('button', { name: 'Start / Resume interview' }));
+    await screen.findByRole('heading', { name: 'Possible conflict 1' });
+    fireEvent.click(screen.getByRole('button', { name: 'Keep the first memory' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm: Keep the first memory' }));
+
+    expect(
+      await screen.findByText(
+        'Your choice was saved, but the latest story state could not be refreshed. Reconnect before continuing.',
+      ),
+    ).toHaveAttribute('role', 'alert');
+    expect(
+      screen.queryByText('Conflict resolved. Story Keeper refreshed the latest story state.'),
+    ).not.toBeInTheDocument();
+  });
+
+  it('refreshes and explains a stale conflicting resolution without claiming success', async () => {
+    const client = createClient();
+    client.listPendingConflicts = vi
+      .fn<StoryKeeperClient['listPendingConflicts']>()
+      .mockResolvedValueOnce(rosaConflicts)
+      .mockResolvedValue({ conflicts: [] });
+    client.resolveConflict = vi.fn<StoryKeeperClient['resolveConflict']>(() =>
+      Promise.reject(
+        new StoryKeeperClientError('conflict_state', 'This conflict changed since it was loaded.'),
+      ),
+    );
+    render(<SimulatorApp createClient={() => client} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    await screen.findByText('15 tools verified');
+    fireEvent.click(screen.getByRole('button', { name: 'Start / Resume interview' }));
+    await screen.findByRole('heading', { name: 'Possible conflict 1' });
+    fireEvent.click(screen.getByRole('button', { name: 'Keep the second memory' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm: Keep the second memory' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'This conflict changed since you opened it. We’ve refreshed the latest story state.',
+    );
+    expect(screen.getByText('No memories need conflict review right now.')).toBeInTheDocument();
+    expect(screen.queryByText('Conflict resolved.')).not.toBeInTheDocument();
+    expect(client.listPendingConflicts).toHaveBeenCalledTimes(2);
+  });
+
+  it('ignores a late Rosa resolution response after switching to Maya', async () => {
+    let resolveLateResolution:
+      ((result: Awaited<ReturnType<StoryKeeperClient['resolveConflict']>>) => void) | undefined;
+    const client = createClient();
+    client.listPendingConflicts = vi.fn<StoryKeeperClient['listPendingConflicts']>(() =>
+      Promise.resolve(rosaConflicts),
+    );
+    client.resolveConflict = vi.fn<StoryKeeperClient['resolveConflict']>(
+      () =>
+        new Promise((resolve) => {
+          resolveLateResolution = resolve;
+        }),
+    );
+    render(<SimulatorApp createClient={() => client} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    await screen.findByText('15 tools verified');
+    fireEvent.click(screen.getByRole('button', { name: 'Start / Resume interview' }));
+    await screen.findByRole('heading', { name: 'Possible conflict 1' });
+    fireEvent.click(screen.getByRole('button', { name: 'Keep the first memory' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm: Keep the first memory' }));
+    await screen.findByText(/Saving “Keep the first memory”/);
+
+    fireEvent.change(screen.getByLabelText('Inspect memory as'), { target: { value: 'maya' } });
+    expect(
+      screen.queryByRole('region', { name: 'Memories that need review' }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/1962|1964|Saving “Keep the first memory”/)).not.toBeInTheDocument();
+    resolveLateResolution?.({
+      contradictionId: rosaConflicts.conflicts[0]?.contradictionId ?? answerId,
+      status: 'resolved',
+      resolutionType: 'keep_left',
+      resolvedByPersonId: storyKeeperDemoIds.rosaPersonId,
+      resolvedAt: '2026-01-01T00:00:00.000Z',
+    });
+
+    expect(
+      await screen.findByText('No structured story items are visible to Maya.'),
+    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByText(/Conflict resolved|This conflict changed/)).not.toBeInTheDocument();
+      expect(
+        screen.queryByText(/The private garden|The private courtyard/),
+      ).not.toBeInTheDocument();
+    });
+    expect(client.getStoryContext).toHaveBeenLastCalledWith({
+      familyId: storyKeeperDemoIds.familyId,
+      actorPersonId: storyKeeperDemoIds.mayaPersonId,
+    });
   });
 
   it('supersedes late Rosa context and conflict responses after switching to Maya', async () => {
