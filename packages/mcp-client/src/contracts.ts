@@ -209,6 +209,20 @@ export const deletePendingMemoryResultSchema = z.object({
   itemStatus: z.literal('rejected'),
 });
 
+export const maximumFamilyQuestionLength = 500;
+
+export const queueFamilyQuestionInputSchema = z.object({
+  familyId: opaqueIdSchema,
+  fromPersonId: opaqueIdSchema,
+  toPersonId: opaqueIdSchema,
+  questionText: z.string().trim().min(1).max(maximumFamilyQuestionLength),
+});
+
+export const queueFamilyQuestionResultSchema = z.object({
+  queuedQuestionId: opaqueIdSchema,
+  status: z.literal('queued'),
+});
+
 export { presentationReadInputSchema, timelineResponseSchema };
 
 export type StartInterviewInput = z.infer<typeof startInterviewInputSchema>;
@@ -227,3 +241,5 @@ export type ApproveStoryItemInput = z.infer<typeof approveStoryItemInputSchema>;
 export type ApproveStoryItemResult = z.infer<typeof approveStoryItemResultSchema>;
 export type DeletePendingMemoryInput = z.infer<typeof deletePendingMemoryInputSchema>;
 export type DeletePendingMemoryResult = z.infer<typeof deletePendingMemoryResultSchema>;
+export type QueueFamilyQuestionInput = z.infer<typeof queueFamilyQuestionInputSchema>;
+export type QueueFamilyQuestionResult = z.infer<typeof queueFamilyQuestionResultSchema>;

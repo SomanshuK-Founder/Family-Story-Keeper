@@ -7,6 +7,7 @@ import { AppShell } from '@story-keeper/ui';
 import { useEffect, useRef, useState, type SyntheticEvent } from 'react';
 
 import {
+  maximumFamilyQuestionLength,
   resolveMcpEndpoint,
   StoryKeeperClientError,
   StoryKeeperMcpClient,
@@ -15,6 +16,10 @@ import {
   type ListPendingConflictsResult,
   type StoryKeeperClient,
 } from '@story-keeper/mcp-client';
+import {
+  FamilyQuestionComposer,
+  type FamilyQuestionNotice,
+} from './components/FamilyQuestionComposer.js';
 import {
   DeveloperMemoryInspector,
   type InspectorActor,
@@ -63,6 +68,16 @@ export function SimulatorApp({
   const [interviewId, setInterviewId] = useState<string | null>(null);
   const [question, setQuestion] = useState<GetNextQuestionResult | null>(null);
   const [answer, setAnswer] = useState('');
+  const [narratorTarget, setNarratorTarget] = useState<{
+    readonly id: string;
+    readonly displayName: string;
+  } | null>(null);
+  const [familyQuestionText, setFamilyQuestionText] = useState('');
+  const [familyQuestionSubmitting, setFamilyQuestionSubmitting] = useState(false);
+  const [familyQuestionValidation, setFamilyQuestionValidation] = useState<string | null>(null);
+  const [familyQuestionNotice, setFamilyQuestionNotice] = useState<FamilyQuestionNotice | null>(
+    null,
+  );
   const [notice, setNotice] = useState('Connect to begin Rosa’s interview.');
   const [error, setError] = useState<{ message: string; code: string } | null>(null);
   const [inspectorActor, setInspectorActor] = useState<InspectorActor>('rosa');
@@ -73,6 +88,8 @@ export function SimulatorApp({
   );
   const [inspectorError, setInspectorError] = useState<string | null>(null);
   const inspectorRequestRef = useRef(0);
+  const interviewRequestRef = useRef(0);
+  const familyQuestionMutationRef = useRef(0);
   const conflictMutationRef = useRef(0);
   const memoryMutationRef = useRef(0);
   const processingRunRef = useRef(0);
@@ -93,6 +110,8 @@ export function SimulatorApp({
   useEffect(
     () => () => {
       inspectorRequestRef.current += 1;
+      interviewRequestRef.current += 1;
+      familyQuestionMutationRef.current += 1;
       conflictMutationRef.current += 1;
       memoryMutationRef.current += 1;
       processingRunRef.current += 1;
@@ -107,6 +126,8 @@ export function SimulatorApp({
     cancelProcessing();
     cancelConflictMutation();
     cancelMemoryMutation();
+    cancelInterviewRequest(false);
+    cancelFamilyQuestionMutation(true);
     inspectorRequestRef.current += 1;
     setStoryContext(null);
     setConflicts(null);
@@ -121,9 +142,13 @@ export function SimulatorApp({
       setConnectionStatus('connected');
       setNotice('Connected. Story Keeper’s interview tools are ready.');
 
-      if (interviewId !== null) {
-        const resumedInterviewId = await resumeInterview(client);
+      if (interviewId !== null && inspectorActor === 'rosa') {
+        const requestId = interviewRequestRef.current + 1;
+        interviewRequestRef.current = requestId;
+        const resumedInterviewId = await resumeInterview(client, requestId);
+        if (resumedInterviewId === null) return;
         await loadInspector(inspectorActor, resumedInterviewId);
+        if (interviewRequestRef.current !== requestId) return;
         setNotice('Reconnected. Rosa’s interview was restored from Story Keeper.');
       } else {
         await loadInspector(inspectorActor, null);
@@ -136,29 +161,41 @@ export function SimulatorApp({
   }
 
   async function startInterview(): Promise<void> {
+    if (inspectorActor !== 'rosa') return;
+    const requestId = interviewRequestRef.current + 1;
+    interviewRequestRef.current = requestId;
     setRequestStatus('starting');
     setError(null);
     setNotice('Resuming Rosa’s story…');
     try {
-      const resumedInterviewId = await resumeInterview(client);
+      const resumedInterviewId = await resumeInterview(client, requestId);
+      if (resumedInterviewId === null) return;
       await loadInspector(inspectorActor, resumedInterviewId);
+      if (interviewRequestRef.current !== requestId) return;
       setNotice('Rosa’s interview is ready.');
     } catch (caught: unknown) {
+      if (interviewRequestRef.current !== requestId) return;
       showError(caught, 'Rosa’s interview could not be started. Try again.');
     } finally {
-      setRequestStatus('idle');
+      if (interviewRequestRef.current === requestId) setRequestStatus('idle');
     }
   }
 
-  async function resumeInterview(activeClient: StoryKeeperClient): Promise<string> {
+  async function resumeInterview(
+    activeClient: StoryKeeperClient,
+    requestId: number,
+  ): Promise<string | null> {
     const started = await activeClient.startInterview({
       familyId: storyKeeperDemoIds.familyId,
       personId: storyKeeperDemoIds.rosaPersonId,
     });
+    if (interviewRequestRef.current !== requestId) return null;
+    setNarratorTarget(started.narrator);
     const nextQuestion = await activeClient.getNextQuestion({
       familyId: storyKeeperDemoIds.familyId,
       interviewId: started.interviewId,
     });
+    if (interviewRequestRef.current !== requestId) return null;
     setInterviewId(started.interviewId);
     setQuestion(nextQuestion);
     return started.interviewId;
@@ -166,17 +203,20 @@ export function SimulatorApp({
 
   async function submitAnswer(event: SyntheticEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
-    if (question?.status !== 'question' || requestStatus === 'saving') return;
+    if (inspectorActor !== 'rosa' || question?.status !== 'question' || requestStatus === 'saving')
+      return;
     if (answer.trim().length === 0) {
       setError({ code: 'validation', message: 'Please enter an answer before submitting.' });
       return;
     }
 
+    const requestId = interviewRequestRef.current + 1;
+    interviewRequestRef.current = requestId;
     setRequestStatus('saving');
     setError(null);
     setNotice('Saving your answer…');
     const baseline =
-      inspectorActor === 'rosa' && storyContext?.actor.id === storyKeeperDemoIds.rosaPersonId
+      storyContext?.actor.id === storyKeeperDemoIds.rosaPersonId
         ? captureMemoryItemIds(storyContext)
         : null;
     const processingContextId = processingRunRef.current;
@@ -188,15 +228,18 @@ export function SimulatorApp({
         rawText: answer,
       });
     } catch (caught: unknown) {
+      if (interviewRequestRef.current !== requestId) return;
       showError(caught, 'Your answer could not be saved. It remains in the answer box.');
       setRequestStatus('idle');
       return;
     }
 
+    if (interviewRequestRef.current !== requestId) return;
+
     setAnswer('');
     setNotice('Answer saved. Story Keeper is organizing the memory.');
     inspectorRequestRef.current += 1;
-    if (processingRunRef.current === processingContextId && inspectorActor === 'rosa') {
+    if (processingRunRef.current === processingContextId) {
       void beginProcessingRefresh(baseline);
     }
 
@@ -205,14 +248,16 @@ export function SimulatorApp({
         familyId: storyKeeperDemoIds.familyId,
         interviewId: question.interviewId,
       });
+      if (interviewRequestRef.current !== requestId) return;
       setQuestion(nextQuestion);
     } catch (caught: unknown) {
+      if (interviewRequestRef.current !== requestId) return;
       setError({
         code: caught instanceof StoryKeeperClientError ? caught.code : 'next_question_unavailable',
         message: 'Your answer was saved, but the next question could not be loaded.',
       });
     } finally {
-      setRequestStatus('idle');
+      if (interviewRequestRef.current === requestId) setRequestStatus('idle');
     }
   }
 
@@ -285,6 +330,73 @@ export function SimulatorApp({
     memoryMutationRef.current += 1;
     setActiveMemoryMutation(null);
     setMemoryMutationNotice(null);
+  }
+
+  function cancelInterviewRequest(clearPrivateState: boolean): void {
+    interviewRequestRef.current += 1;
+    setRequestStatus('idle');
+    setError(null);
+    if (clearPrivateState) {
+      setQuestion(null);
+      setAnswer('');
+    }
+  }
+
+  function cancelFamilyQuestionMutation(clearText: boolean): void {
+    familyQuestionMutationRef.current += 1;
+    setFamilyQuestionSubmitting(false);
+    setFamilyQuestionValidation(null);
+    setFamilyQuestionNotice(null);
+    if (clearText) setFamilyQuestionText('');
+  }
+
+  async function submitFamilyQuestion(): Promise<void> {
+    if (familyQuestionSubmitting || connectionStatus !== 'connected') return;
+    const trimmedQuestion = familyQuestionText.trim();
+    if (trimmedQuestion.length === 0 || trimmedQuestion.length > maximumFamilyQuestionLength) {
+      setFamilyQuestionValidation('Enter a question between 1 and 500 characters.');
+      return;
+    }
+    if (
+      inspectorActor !== 'maya' ||
+      storyContext === null ||
+      (storyContext.actor.role !== 'relative' && storyContext.actor.role !== 'child') ||
+      narratorTarget === null
+    ) {
+      setFamilyQuestionNotice({
+        kind: 'error',
+        message: 'This question can’t be sent to a narrator right now.',
+      });
+      return;
+    }
+
+    const mutationId = familyQuestionMutationRef.current + 1;
+    familyQuestionMutationRef.current = mutationId;
+    const senderPersonId = storyContext.actor.id;
+    const target = narratorTarget;
+    setFamilyQuestionSubmitting(true);
+    setFamilyQuestionValidation(null);
+    setFamilyQuestionNotice(null);
+
+    try {
+      await client.queueFamilyQuestion({
+        familyId: storyKeeperDemoIds.familyId,
+        fromPersonId: senderPersonId,
+        toPersonId: target.id,
+        questionText: trimmedQuestion,
+      });
+      if (familyQuestionMutationRef.current !== mutationId) return;
+      setFamilyQuestionText('');
+      setFamilyQuestionNotice({
+        kind: 'success',
+        message: `Question added for ${target.displayName}.`,
+      });
+    } catch (caught: unknown) {
+      if (familyQuestionMutationRef.current !== mutationId) return;
+      setFamilyQuestionNotice({ kind: 'error', message: familyQuestionErrorMessage(caught) });
+    } finally {
+      if (familyQuestionMutationRef.current === mutationId) setFamilyQuestionSubmitting(false);
+    }
   }
 
   async function mutateMemory(
@@ -446,6 +558,9 @@ export function SimulatorApp({
           : Promise.resolve({ conflicts: [] });
       const [nextContext, nextConflicts] = await Promise.all([contextPromise, conflictPromise]);
       if (inspectorRequestRef.current !== requestId) return false;
+      if (nextContext.actor.role === 'narrator') {
+        setNarratorTarget({ id: nextContext.actor.id, displayName: nextContext.actor.displayName });
+      }
       setStoryContext(nextContext);
       setConflicts(nextConflicts.conflicts);
       setInspectorStatus('ready');
@@ -466,6 +581,8 @@ export function SimulatorApp({
     cancelProcessing();
     cancelConflictMutation();
     cancelMemoryMutation();
+    cancelInterviewRequest(true);
+    cancelFamilyQuestionMutation(true);
     setInspectorActor(actor);
     setNotice(
       actor === 'rosa'
@@ -522,84 +639,108 @@ export function SimulatorApp({
       )}
 
       <div className="simulator-layout">
-        <section className="surface-panel conversation-panel" aria-labelledby="conversation-title">
-          <div className="conversation-topline">
-            <div>
-              <p className="panel-label">Conversation with Rosa</p>
-              <h2 id="conversation-title">One memory at a time</h2>
-            </div>
-            <button
-              className="primary-button"
-              type="button"
-              disabled={!isConnected || requestStatus !== 'idle'}
-              onClick={() => void startInterview()}
-            >
-              {requestStatus === 'starting' ? 'Resuming…' : 'Start / Resume interview'}
-            </button>
-          </div>
-
-          <div className="question-region" aria-live="polite" aria-atomic="true">
-            {question === null ? (
-              <p className="empty-copy">
-                {isConnected
-                  ? 'Choose Start / Resume interview to ask Rosa’s current question.'
-                  : 'Connect to the Story Keeper server to load Rosa’s real interview.'}
-              </p>
-            ) : question.status === 'complete' ? (
-              <div>
-                <p className="panel-label">Interview complete</p>
-                <p className="current-question">Rosa has answered every question for now.</p>
-              </div>
-            ) : (
-              <div>
-                <p className="panel-label">Story Keeper asks</p>
-                <p className="current-question">{question.questionText}</p>
-              </div>
-            )}
-          </div>
-
-          <form
-            className="answer-form"
-            onSubmit={(event) => {
-              void submitAnswer(event);
-            }}
+        {inspectorActor === 'rosa' ? (
+          <section
+            className="surface-panel conversation-panel"
+            aria-labelledby="conversation-title"
           >
-            <label htmlFor="story-answer">Rosa’s answer</label>
-            <textarea
-              id="story-answer"
-              name="story-answer"
-              rows={5}
-              maxLength={maximumRawAnswerLength}
-              value={answer}
-              disabled={question?.status !== 'question' || requestStatus === 'saving'}
-              onChange={(event) => {
-                setAnswer(event.currentTarget.value);
-              }}
-              placeholder="Type Rosa’s memory here…"
-            />
-            <div className="answer-actions">
-              <span>{answer.length.toLocaleString()} / 20,000 characters</span>
+            <div className="conversation-topline">
+              <div>
+                <p className="panel-label">Conversation with Rosa</p>
+                <h2 id="conversation-title">One memory at a time</h2>
+              </div>
               <button
                 className="primary-button"
-                type="submit"
-                disabled={
-                  question?.status !== 'question' ||
-                  requestStatus === 'saving' ||
-                  answer.trim().length === 0
-                }
+                type="button"
+                disabled={!isConnected || requestStatus !== 'idle'}
+                onClick={() => void startInterview()}
               >
-                {requestStatus === 'saving' ? 'Saving…' : 'Submit answer'}
+                {requestStatus === 'starting' ? 'Resuming…' : 'Start / Resume interview'}
               </button>
             </div>
-          </form>
-          <p className="save-status" role="status" aria-live="polite">
-            {notice}
-          </p>
-          <ProcessingStatus
-            phase={processingPhase}
-            onCheckAgain={() => void beginProcessingRefresh(processingBaselineRef.current)}
+
+            <div className="question-region" aria-live="polite" aria-atomic="true">
+              {question === null ? (
+                <p className="empty-copy">
+                  {isConnected
+                    ? 'Choose Start / Resume interview to ask Rosa’s current question.'
+                    : 'Connect to the Story Keeper server to load Rosa’s real interview.'}
+                </p>
+              ) : question.status === 'complete' ? (
+                <div>
+                  <p className="panel-label">Interview complete</p>
+                  <p className="current-question">Rosa has answered every question for now.</p>
+                </div>
+              ) : (
+                <div>
+                  <p className="panel-label">Story Keeper asks</p>
+                  <p className="current-question">{question.questionText}</p>
+                </div>
+              )}
+            </div>
+
+            <form
+              className="answer-form"
+              onSubmit={(event) => {
+                void submitAnswer(event);
+              }}
+            >
+              <label htmlFor="story-answer">Rosa’s answer</label>
+              <textarea
+                id="story-answer"
+                name="story-answer"
+                rows={5}
+                maxLength={maximumRawAnswerLength}
+                value={answer}
+                disabled={question?.status !== 'question' || requestStatus === 'saving'}
+                onChange={(event) => {
+                  setAnswer(event.currentTarget.value);
+                }}
+                placeholder="Type Rosa’s memory here…"
+              />
+              <div className="answer-actions">
+                <span>{answer.length.toLocaleString()} / 20,000 characters</span>
+                <button
+                  className="primary-button"
+                  type="submit"
+                  disabled={
+                    question?.status !== 'question' ||
+                    requestStatus === 'saving' ||
+                    answer.trim().length === 0
+                  }
+                >
+                  {requestStatus === 'saving' ? 'Saving…' : 'Submit answer'}
+                </button>
+              </div>
+            </form>
+            <p className="save-status" role="status" aria-live="polite">
+              {notice}
+            </p>
+            <ProcessingStatus
+              phase={processingPhase}
+              onCheckAgain={() => void beginProcessingRefresh(processingBaselineRef.current)}
+            />
+          </section>
+        ) : (
+          <FamilyQuestionComposer
+            narratorName={narratorTarget?.displayName ?? null}
+            questionText={familyQuestionText}
+            connected={
+              isConnected &&
+              (storyContext?.actor.role === 'relative' || storyContext?.actor.role === 'child')
+            }
+            submitting={familyQuestionSubmitting}
+            validationMessage={familyQuestionValidation}
+            notice={familyQuestionNotice}
+            contextStatus={notice}
+            onQuestionChange={(questionText) => {
+              setFamilyQuestionText(questionText);
+              setFamilyQuestionValidation(null);
+              setFamilyQuestionNotice(null);
+            }}
+            onSubmit={() => void submitFamilyQuestion()}
           />
-        </section>
+        )}
 
         <aside className="surface-panel visual-placeholder" aria-labelledby="visual-title">
           <div className="memory-window" aria-hidden="true">
@@ -739,4 +880,20 @@ function memoryMutationErrorMessage(caught: unknown): string {
     return 'That memory action is not available.';
   }
   return 'Story Keeper could not change this memory. No story state was changed here.';
+}
+
+function familyQuestionErrorMessage(caught: unknown): string {
+  if (!(caught instanceof StoryKeeperClientError)) {
+    return 'Story Keeper could not add this question. Try again.';
+  }
+  if (caught.code === 'validation') {
+    return 'Enter a question between 1 and 500 characters.';
+  }
+  if (caught.code === 'authorization') {
+    return 'This question can’t be sent to that narrator right now.';
+  }
+  if (caught.code === 'unavailable') {
+    return 'The connection was interrupted. Your question was not confirmed as added.';
+  }
+  return 'Story Keeper could not add this question. Try again.';
 }

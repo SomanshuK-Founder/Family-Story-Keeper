@@ -96,6 +96,13 @@ function baseSession() {
             itemStatus: 'rejected',
           }),
         );
+      if (name === 'queue_family_question')
+        return Promise.resolve(
+          result({
+            queuedQuestionId: candidatePersonId,
+            status: 'queued',
+          }),
+        );
       return Promise.resolve(result({ items: [] }));
     }),
     close: vi.fn(() => Promise.resolve()),
@@ -157,6 +164,20 @@ describe('StoryKeeperMcpClient', () => {
         targetId: candidatePersonId,
       }),
     ).resolves.toMatchObject({ status: 'deleted', itemStatus: 'rejected' });
+    await expect(
+      client.queueFamilyQuestion({
+        familyId,
+        fromPersonId: mayaPersonId,
+        toPersonId: personId,
+        questionText: '  What was your first job?  ',
+      }),
+    ).resolves.toEqual({ queuedQuestionId: candidatePersonId, status: 'queued' });
+    expect(session.callTool).toHaveBeenCalledWith('queue_family_question', {
+      familyId,
+      fromPersonId: mayaPersonId,
+      toPersonId: personId,
+      questionText: 'What was your first job?',
+    });
     await expect(client.getTimeline({ familyId, actorPersonId: mayaPersonId })).resolves.toEqual({
       items: [],
     });
@@ -299,6 +320,81 @@ describe('StoryKeeperMcpClient', () => {
         targetType: 'fact',
         targetId: candidatePersonId,
         action: 'approve',
+      }),
+    ).rejects.toEqual(new StoryKeeperClientError(code, message));
+  });
+
+  it('validates the exact family-question input and output boundary', async () => {
+    const invalidOutputSession = {
+      ...baseSession(),
+      callTool: vi.fn(() => Promise.resolve(result({ status: 'queued' }))),
+    };
+    const invalidOutputClient = new StoryKeeperMcpClient(endpoint, () => invalidOutputSession);
+    await invalidOutputClient.connect();
+    await expect(
+      invalidOutputClient.queueFamilyQuestion({
+        familyId,
+        fromPersonId: mayaPersonId,
+        toPersonId: personId,
+        questionText: 'A valid question?',
+      }),
+    ).rejects.toEqual(
+      new StoryKeeperClientError('protocol', 'Story Keeper returned an unexpected response.'),
+    );
+
+    const inputSession = baseSession();
+    const inputClient = new StoryKeeperMcpClient(endpoint, () => inputSession);
+    await inputClient.connect();
+    await expect(
+      inputClient.queueFamilyQuestion({
+        familyId,
+        fromPersonId: mayaPersonId,
+        toPersonId: personId,
+        questionText: ' '.repeat(2),
+      }),
+    ).rejects.toMatchObject({ code: 'validation' });
+    await expect(
+      inputClient.queueFamilyQuestion({
+        familyId,
+        fromPersonId: mayaPersonId,
+        toPersonId: personId,
+        questionText: 'x'.repeat(501),
+      }),
+    ).rejects.toMatchObject({ code: 'validation' });
+    expect(inputSession.callTool).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['QUESTION_TEXT_INVALID', 'validation', 'Enter a question between 1 and 500 characters.'],
+    [
+      'QUESTION_SENDER_NOT_ALLOWED',
+      'authorization',
+      'This family question cannot be sent for that person.',
+    ],
+    [
+      'QUESTION_TARGET_NOT_NARRATOR',
+      'authorization',
+      'This family question cannot be sent for that person.',
+    ],
+  ] as const)('maps %s to a safe family-question error', async (serverCode, code, message) => {
+    const session = {
+      ...baseSession(),
+      callTool: vi.fn(() =>
+        Promise.resolve({
+          isError: true,
+          content: [{ type: 'text' as const, text: `${serverCode}: private backend details` }],
+        }),
+      ),
+    };
+    const client = new StoryKeeperMcpClient(endpoint, () => session);
+    await client.connect();
+
+    await expect(
+      client.queueFamilyQuestion({
+        familyId,
+        fromPersonId: mayaPersonId,
+        toPersonId: personId,
+        questionText: 'What was your first job?',
       }),
     ).rejects.toEqual(new StoryKeeperClientError(code, message));
   });

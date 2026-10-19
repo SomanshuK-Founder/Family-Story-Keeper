@@ -17,6 +17,8 @@ import {
   listPendingConflictsInputSchema,
   listPendingConflictsResultSchema,
   presentationReadInputSchema,
+  queueFamilyQuestionInputSchema,
+  queueFamilyQuestionResultSchema,
   resolveConflictInputSchema,
   resolveConflictResultSchema,
   saveAnswerInputSchema,
@@ -34,6 +36,8 @@ import {
   type GetStoryContextResult,
   type ListPendingConflictsInput,
   type ListPendingConflictsResult,
+  type QueueFamilyQuestionInput,
+  type QueueFamilyQuestionResult,
   type ResolveConflictInput,
   type ResolveConflictResult,
   type SaveAnswerInput,
@@ -97,6 +101,7 @@ export interface StoryKeeperClient {
   resolveConflict(input: ResolveConflictInput): Promise<ResolveConflictResult>;
   approveStoryItem(input: ApproveStoryItemInput): Promise<ApproveStoryItemResult>;
   deletePendingMemory(input: DeletePendingMemoryInput): Promise<DeletePendingMemoryResult>;
+  queueFamilyQuestion(input: QueueFamilyQuestionInput): Promise<QueueFamilyQuestionResult>;
   getTimeline(input: PresentationReadInput): Promise<TimelineResponse>;
 }
 
@@ -221,6 +226,15 @@ export class StoryKeeperMcpClient implements StoryKeeperClient {
     );
   }
 
+  public queueFamilyQuestion(input: QueueFamilyQuestionInput): Promise<QueueFamilyQuestionResult> {
+    return this.callValidatedTool(
+      'queue_family_question',
+      queueFamilyQuestionInputSchema,
+      queueFamilyQuestionResultSchema,
+      input,
+    );
+  }
+
   public getTimeline(input: PresentationReadInput): Promise<TimelineResponse> {
     return this.callValidatedTool(
       'get_timeline',
@@ -319,6 +333,21 @@ function assertFrozenToolSet(actualTools: readonly string[]): void {
 function mapToolError(result: CallToolResult): StoryKeeperClientError {
   const text = result.content.find((item) => item.type === 'text');
   const serverCode = text?.type === 'text' ? /^([A-Z][A-Z0-9_]+):/.exec(text.text)?.[1] : undefined;
+  if (serverCode === 'QUESTION_TEXT_INVALID') {
+    return new StoryKeeperClientError(
+      'validation',
+      'Enter a question between 1 and 500 characters.',
+    );
+  }
+  if (
+    serverCode === 'QUESTION_SENDER_NOT_ALLOWED' ||
+    serverCode === 'QUESTION_TARGET_NOT_NARRATOR'
+  ) {
+    return new StoryKeeperClientError(
+      'authorization',
+      'This family question cannot be sent for that person.',
+    );
+  }
   if (serverCode?.includes('AUTH') === true || serverCode?.includes('FAMILY') === true) {
     return new StoryKeeperClientError(
       'authorization',

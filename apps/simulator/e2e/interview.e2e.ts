@@ -2,11 +2,13 @@ import { expect, test } from '@playwright/test';
 
 test.use({ viewport: { width: 820, height: 900 } });
 
-test('Rosa resolves, approves, and removes memories while Maya stays approved-only', async ({
+test('Rosa and Maya use the real memory and family-question lifecycle safely', async ({
   page,
 }, testInfo) => {
   const consoleErrors: string[] = [];
+  const consoleMessages: string[] = [];
   page.on('console', (message) => {
+    consoleMessages.push(message.text());
     if (message.type() === 'error') consoleErrors.push(message.text());
   });
 
@@ -23,8 +25,16 @@ test('Rosa resolves, approves, and removes memories while Maya stays approved-on
   await page.getByRole('button', { name: 'Start / Resume interview' }).focus();
   await page.keyboard.press('Enter');
   const developerInspector = page.locator('.developer-inspector');
-  await expect(developerInspector.getByText(/Favorite place: The private garden/)).toBeVisible();
-  await expect(developerInspector.getByText(/Favorite place: The old market square/)).toBeVisible();
+  await expect(
+    developerInspector
+      .locator('.context-sections li')
+      .filter({ hasText: 'Favorite place: The private garden' }),
+  ).toBeVisible();
+  await expect(
+    developerInspector
+      .locator('.context-sections li')
+      .filter({ hasText: 'Favorite place: The old market square' }),
+  ).toBeVisible();
   const firstQuestion = await page.locator('.current-question').textContent();
   expect(firstQuestion).toBeTruthy();
 
@@ -185,12 +195,52 @@ test('Rosa resolves, approves, and removes memories while Maya stays approved-on
   await expect(
     mayaFamilyMemory.getByRole('button', { name: /approve|reject|revoke|remove/i }),
   ).toHaveCount(0);
+  const queuedQuestionText = 'What was your first job?';
+  const privateDraft = 'Maya private unsent draft';
+  await expect(page.getByRole('heading', { name: 'Ask Rosa a question' })).toBeVisible();
+  await page.getByLabel('What would you like Rosa to talk about?').fill(queuedQuestionText);
+  await page.getByRole('button', { name: 'Send question' }).focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByText('Question added for Rosa.')).toBeVisible();
+  await expect(page.getByLabel('What would you like Rosa to talk about?')).toHaveValue('');
+  await expect(page.getByText(queuedQuestionText, { exact: true })).toHaveCount(0);
+  await page.getByLabel('What would you like Rosa to talk about?').fill(privateDraft);
+  await page.screenshot({ path: testInfo.outputPath('phase-7-820.png'), fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   );
+  await page.setViewportSize({ width: 1440, height: 900 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  await page.screenshot({ path: testInfo.outputPath('phase-7-1440.png'), fullPage: true });
+  await page.setViewportSize({ width: 820, height: 900 });
+
+  const questionPersistence = await page.evaluate(
+    async ({ queuedQuestion, draft }) => ({
+      local: JSON.stringify(window.localStorage),
+      session: JSON.stringify(window.sessionStorage),
+      indexedDbNames: await window.indexedDB
+        .databases()
+        .then((databases) => databases.flatMap(({ name }) => (name === undefined ? [] : [name]))),
+      url: window.location.href,
+      queuedQuestion,
+      draft,
+    }),
+    { queuedQuestion: queuedQuestionText, draft: privateDraft },
+  );
+  expect(questionPersistence.local).not.toContain(queuedQuestionText);
+  expect(questionPersistence.local).not.toContain(privateDraft);
+  expect(questionPersistence.session).not.toContain(queuedQuestionText);
+  expect(questionPersistence.session).not.toContain(privateDraft);
+  expect(questionPersistence.indexedDbNames).toEqual([]);
+  expect(questionPersistence.url).not.toContain(encodeURIComponent(queuedQuestionText));
+  expect(questionPersistence.url).not.toContain(encodeURIComponent(privateDraft));
 
   await page.getByLabel('Inspect memory as').selectOption('rosa');
   await expect(page.getByText('Viewing Rosa’s narrator memory.')).toBeVisible();
+  await expect(page.getByText(privateDraft, { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Question added for Rosa.')).toHaveCount(0);
   const rosaMemoryAfterReturn = page.getByRole('region', { name: 'Review story memories' });
   const eveningEvent = rosaMemoryAfterReturn
     .getByRole('heading', { name: 'Evenings by the garden gate' })
@@ -220,16 +270,30 @@ test('Rosa resolves, approves, and removes memories while Maya stays approved-on
   ).toHaveCount(0);
   await expect(rosaMemoryAfterReturn.getByRole('heading', { name: 'Garden sound' })).toBeVisible();
 
+  await page.getByRole('button', { name: 'Start / Resume interview' }).focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.current-question')).toHaveText(nextQuestion ?? '');
+  await page.getByLabel('Rosa’s answer').fill('I remember that part more clearly now.');
+  await page.getByRole('button', { name: 'Submit answer' }).click();
+  const surfacedFamilyQuestion = `Maya left you a question. They asked: “${queuedQuestionText}”`;
+  await expect(page.locator('.current-question')).toHaveText(surfacedFamilyQuestion);
+  await page.getByLabel('Rosa’s answer').fill('My first job was helping at the railway office.');
+  await page.getByRole('button', { name: 'Submit answer' }).click();
+  await expect(page.locator('.current-question')).not.toHaveText(surfacedFamilyQuestion);
+  const questionAfterFamilyAnswer = await page.locator('.current-question').textContent();
+  expect(questionAfterFamilyAnswer).toBeTruthy();
+
   await page.reload();
   await page.getByRole('button', { name: 'Connect' }).focus();
   await page.keyboard.press('Enter');
   await expect(page.getByText('15 tools verified')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Needs clarification' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Raj' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Devika' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Raj' }).first()).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Devika' }).first()).toBeVisible();
   await page.getByRole('button', { name: 'Start / Resume interview' }).focus();
   await page.keyboard.press('Enter');
-  await expect(page.locator('.current-question')).toHaveText(nextQuestion ?? '');
+  await expect(page.locator('.current-question')).toHaveText(questionAfterFamilyAnswer ?? '');
+  await expect(page.locator('.current-question')).not.toHaveText(surfacedFamilyQuestion);
   await expect(page.getByText('No memories need conflict review right now.')).toBeVisible();
 
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -247,6 +311,8 @@ test('Rosa resolves, approves, and removes memories while Maya stays approved-on
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   );
-  expect(consoleErrors.join('\n')).not.toContain(rawAnswer);
+  expect(consoleMessages.join('\n')).not.toContain(rawAnswer);
+  expect(consoleMessages.join('\n')).not.toContain(queuedQuestionText);
+  expect(consoleMessages.join('\n')).not.toContain(privateDraft);
   expect(consoleErrors).toEqual([]);
 });

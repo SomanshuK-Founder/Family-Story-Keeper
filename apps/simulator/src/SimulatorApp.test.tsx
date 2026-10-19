@@ -3,6 +3,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type {
+  GetNextQuestionResult,
   GetStoryContextResult,
   ListPendingConflictsResult,
   StoryKeeperClient,
@@ -172,6 +173,12 @@ function createClient() {
     deletePendingMemory: vi.fn<StoryKeeperClient['deletePendingMemory']>(
       ({ targetType, targetId }) =>
         Promise.resolve({ targetType, targetId, status: 'deleted', itemStatus: 'rejected' }),
+    ),
+    queueFamilyQuestion: vi.fn<StoryKeeperClient['queueFamilyQuestion']>(() =>
+      Promise.resolve({
+        queuedQuestionId: '40000000-0000-4000-8000-000000000001',
+        status: 'queued',
+      }),
     ),
     getTimeline: vi.fn<StoryKeeperClient['getTimeline']>(() => Promise.resolve({ items: [] })),
   } satisfies StoryKeeperClient;
@@ -820,5 +827,121 @@ describe('SimulatorApp', () => {
       ).toBeInTheDocument();
     });
     expect(client.listPendingConflicts).toHaveBeenCalledTimes(1);
+  });
+
+  it('lets Maya queue a trimmed family question without exposing queue internals', async () => {
+    const client = createClient();
+    render(<SimulatorApp createClient={() => client} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    await screen.findByText(
+      (_, element) =>
+        element?.classList.contains('visibility-label') === true &&
+        element.textContent.includes('Viewing as Rosa'),
+    );
+    fireEvent.change(screen.getByLabelText('Inspect memory as'), { target: { value: 'maya' } });
+
+    const questionBox = await screen.findByLabelText('What would you like Rosa to talk about?');
+    expect(screen.getByRole('heading', { name: 'Ask Rosa a question' })).toBeInTheDocument();
+    expect(
+      screen.getByText('Your question will be added to Rosa’s future interview prompts.'),
+    ).toBeInTheDocument();
+    fireEvent.change(questionBox, { target: { value: '  What was your first job?  ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send question' }));
+
+    expect(await screen.findByText('Question added for Rosa.')).toBeInTheDocument();
+    expect(client.queueFamilyQuestion).toHaveBeenCalledWith({
+      familyId: storyKeeperDemoIds.familyId,
+      fromPersonId: storyKeeperDemoIds.mayaPersonId,
+      toPersonId: storyKeeperDemoIds.rosaPersonId,
+      questionText: 'What was your first job?',
+    });
+    expect(questionBox).toHaveValue('');
+    expect(screen.queryByText('40000000-0000-4000-8000-000000000001')).not.toBeInTheDocument();
+    expect(window.localStorage.length).toBe(0);
+    expect(window.sessionStorage.length).toBe(0);
+    expect(window.location.search).toBe('');
+
+    fireEvent.change(questionBox, { target: { value: 'x'.repeat(501) } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send question' }));
+    expect(
+      await screen.findByText('Enter a question between 1 and 500 characters.'),
+    ).toBeInTheDocument();
+    expect(questionBox).toHaveAttribute('aria-invalid', 'true');
+    expect(questionBox).toHaveFocus();
+    expect(client.queueFamilyQuestion).toHaveBeenCalledTimes(1);
+  });
+
+  it('blocks duplicate question clicks and clears Maya state across an actor-switch race', async () => {
+    let finishQueue: ((result: { queuedQuestionId: string; status: 'queued' }) => void) | undefined;
+    const client = createClient();
+    client.queueFamilyQuestion = vi.fn<StoryKeeperClient['queueFamilyQuestion']>(
+      () =>
+        new Promise((resolve) => {
+          finishQueue = resolve;
+        }),
+    );
+    render(<SimulatorApp createClient={() => client} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    await screen.findByText(
+      (_, element) =>
+        element?.classList.contains('visibility-label') === true &&
+        element.textContent.includes('Viewing as Rosa'),
+    );
+    fireEvent.change(screen.getByLabelText('Inspect memory as'), { target: { value: 'maya' } });
+    const questionBox = await screen.findByLabelText('What would you like Rosa to talk about?');
+    fireEvent.change(questionBox, { target: { value: 'A private draft from Maya' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send question' }));
+    expect(screen.getByRole('button', { name: 'Sending…' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Sending…' }));
+    expect(client.queueFamilyQuestion).toHaveBeenCalledTimes(1);
+
+    fireEvent.change(screen.getByLabelText('Inspect memory as'), { target: { value: 'rosa' } });
+    expect(screen.queryByText('A private draft from Maya')).not.toBeInTheDocument();
+    finishQueue?.({
+      queuedQuestionId: '40000000-0000-4000-8000-000000000001',
+      status: 'queued',
+    });
+    await waitFor(() => {
+      expect(screen.queryByText('Question added for Rosa.')).not.toBeInTheDocument();
+      expect(screen.queryByText('A private draft from Maya')).not.toBeInTheDocument();
+    });
+  });
+
+  it('ignores a late Rosa question after switching to Maya', async () => {
+    let finishQuestion: ((result: GetNextQuestionResult) => void) | undefined;
+    const client = createClient();
+    client.getNextQuestion = vi.fn<StoryKeeperClient['getNextQuestion']>(
+      () =>
+        new Promise((resolve) => {
+          finishQuestion = resolve;
+        }),
+    );
+    render(<SimulatorApp createClient={() => client} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    await screen.findByText(
+      (_, element) =>
+        element?.classList.contains('visibility-label') === true &&
+        element.textContent.includes('Viewing as Rosa'),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Start / Resume interview' }));
+    await waitFor(() => {
+      expect(client.getNextQuestion).toHaveBeenCalledTimes(1);
+    });
+    fireEvent.change(screen.getByLabelText('Inspect memory as'), { target: { value: 'maya' } });
+    await screen.findByRole('heading', { name: 'Ask Rosa a question' });
+
+    finishQuestion?.({
+      status: 'question',
+      interviewId,
+      questionId: secondQuestionId,
+      questionText: 'Rosa private queued interview question',
+    });
+    await waitFor(() => {
+      expect(screen.queryByText('Rosa private queued interview question')).not.toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Ask Rosa a question' })).toBeInTheDocument();
+    });
   });
 });
