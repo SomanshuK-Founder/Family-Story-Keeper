@@ -69,6 +69,13 @@ function createClient(timeline: TimelineResponse): StoryKeeperClient {
     saveAnswer: () => Promise.reject(new Error('Not used')),
     getStoryContext: () => Promise.reject(new Error('Not used')),
     listPendingConflicts: () => Promise.reject(new Error('Not used')),
+    resolveConflict: () => Promise.reject(new Error('Not used')),
+    approveStoryItem: () => Promise.reject(new Error('Not used')),
+    deletePendingMemory: () => Promise.reject(new Error('Not used')),
+    queueFamilyQuestion: () => Promise.reject(new Error('Not used')),
+    requestChapterDraft: () => Promise.reject(new Error('Not used')),
+    reviewChapter: () => Promise.reject(new Error('Not used')),
     getTimeline: () => Promise.resolve(timeline),
+    searchFamilyStory: () => Promise.resolve({ results: [] }),
   };
 }

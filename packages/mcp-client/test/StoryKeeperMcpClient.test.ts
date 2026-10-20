@@ -103,6 +103,23 @@ function baseSession() {
             status: 'queued',
           }),
         );
+      if (name === 'search_family_story')
+        return Promise.resolve(
+          result({
+            results: [
+              {
+                sourceType: 'timeline_event',
+                sourceId: candidatePersonId,
+                title: 'Moved near the old market',
+                snippet: 'Rosa remembered moving near the old market.',
+                personId,
+                personDisplayName: 'Rosa',
+                date: { earliestYear: 1962, latestYear: 1964, precision: 'range' },
+                rank: -0.8,
+              },
+            ],
+          }),
+        );
       return Promise.resolve(result({ items: [] }));
     }),
     close: vi.fn(() => Promise.resolve()),
@@ -181,6 +198,22 @@ describe('StoryKeeperMcpClient', () => {
     await expect(client.getTimeline({ familyId, actorPersonId: mayaPersonId })).resolves.toEqual({
       items: [],
     });
+    await expect(
+      client.searchFamilyStory({
+        familyId,
+        actorPersonId: mayaPersonId,
+        query: '  old market  ',
+        limit: 10,
+      }),
+    ).resolves.toMatchObject({
+      results: [{ sourceType: 'timeline_event', title: 'Moved near the old market' }],
+    });
+    expect(session.callTool).toHaveBeenCalledWith('search_family_story', {
+      familyId,
+      actorPersonId: mayaPersonId,
+      query: 'old market',
+      limit: 10,
+    });
     await client.disconnect();
     expect(session.close.mock.calls).toHaveLength(1);
   });
@@ -222,6 +255,54 @@ describe('StoryKeeperMcpClient', () => {
     await expect(
       client.getTimeline({ familyId, actorPersonId: mayaPersonId }),
     ).rejects.toMatchObject({ code: 'protocol' });
+  });
+
+  it('validates the exact search response and maps malformed queries safely', async () => {
+    const invalidOutputSession = {
+      ...baseSession(),
+      callTool: vi.fn(() =>
+        Promise.resolve(result({ results: [{ title: 'Missing required fields' }] })),
+      ),
+    };
+    const invalidOutputClient = new StoryKeeperMcpClient(endpoint, () => invalidOutputSession);
+    await invalidOutputClient.connect();
+    await expect(
+      invalidOutputClient.searchFamilyStory({
+        familyId,
+        actorPersonId: personId,
+        query: 'garden',
+        limit: 10,
+      }),
+    ).rejects.toEqual(
+      new StoryKeeperClientError('protocol', 'Story Keeper returned an unexpected response.'),
+    );
+
+    const invalidQuerySession = {
+      ...baseSession(),
+      callTool: vi.fn(() =>
+        Promise.resolve({
+          isError: true,
+          content: [
+            { type: 'text' as const, text: 'SEARCH_QUERY_INVALID: SQLite private details' },
+          ],
+        }),
+      ),
+    };
+    const invalidQueryClient = new StoryKeeperMcpClient(endpoint, () => invalidQuerySession);
+    await invalidQueryClient.connect();
+    await expect(
+      invalidQueryClient.searchFamilyStory({
+        familyId,
+        actorPersonId: personId,
+        query: '*',
+        limit: 10,
+      }),
+    ).rejects.toEqual(
+      new StoryKeeperClientError(
+        'validation',
+        'Enter a search with at least one letter or number.',
+      ),
+    );
   });
 
   it('maps conflict state and invalid-resolution errors to safe categories', async () => {

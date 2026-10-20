@@ -1,7 +1,9 @@
 import {
   maximumRawAnswerLength,
+  searchFamilyStoryInputSchema,
   storyKeeperDemoIds,
   type ContradictionResolutionType,
+  type FamilyStorySearchResult,
 } from '@story-keeper/shared';
 import { AppShell } from '@story-keeper/ui';
 import { useEffect, useRef, useState, type SyntheticEvent } from 'react';
@@ -37,6 +39,7 @@ import {
   type ConflictNotice,
 } from './components/conflicts/ConflictReviewList.js';
 import { PendingMemoryList } from './components/memory/PendingMemoryList.js';
+import { SearchPanel, type SearchUiStatus } from './components/SearchPanel.js';
 import type {
   ActiveMemoryMutation,
   MemoryMutationAction,
@@ -59,6 +62,7 @@ import {
 
 type ConnectionStatus = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'error';
 type RequestStatus = 'idle' | 'starting' | 'saving';
+type SimulatorView = 'interview' | 'search';
 
 interface SimulatorAppProps {
   readonly createClient?: () => StoryKeeperClient;
@@ -76,6 +80,7 @@ export function SimulatorApp({
   const client = clientRef.current;
 
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('idle');
+  const [activeView, setActiveView] = useState<SimulatorView>('interview');
   const [requestStatus, setRequestStatus] = useState<RequestStatus>('idle');
   const [toolCount, setToolCount] = useState<number | null>(null);
   const [interviewId, setInterviewId] = useState<string | null>(null);
@@ -128,6 +133,12 @@ export function SimulatorApp({
   const chapterFlowRef = useRef(0);
   const chapterMutationRef = useRef(0);
   const chapterAbortRef = useRef<AbortController | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchStatus, setSearchStatus] = useState<SearchUiStatus>('idle');
+  const [searchResults, setSearchResults] = useState<readonly FamilyStorySearchResult[]>([]);
+  const [searchValidation, setSearchValidation] = useState<string | null>(null);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const searchRequestRef = useRef(0);
 
   useEffect(
     () => () => {
@@ -139,6 +150,7 @@ export function SimulatorApp({
       chapterFlowRef.current += 1;
       chapterMutationRef.current += 1;
       chapterAbortRef.current?.abort();
+      searchRequestRef.current += 1;
       processingRunRef.current += 1;
       processingAbortRef.current?.abort();
       void client.disconnect();
@@ -154,6 +166,7 @@ export function SimulatorApp({
     cancelInterviewRequest(false);
     cancelFamilyQuestionMutation(true);
     cancelChapterWork(true);
+    cancelSearch(true);
     inspectorRequestRef.current += 1;
     setStoryContext(null);
     setConflicts(null);
@@ -441,6 +454,73 @@ export function SimulatorApp({
       setChapterTopic('');
       setChapterStatus('idle');
       setChapterReview(null);
+    }
+  }
+
+  function cancelSearch(clearQuery: boolean): void {
+    searchRequestRef.current += 1;
+    setSearchStatus('idle');
+    setSearchResults([]);
+    setSearchValidation(null);
+    setSearchError(null);
+    if (clearQuery) setSearchQuery('');
+  }
+
+  async function submitSearch(): Promise<void> {
+    if (connectionStatus !== 'connected' || searchStatus === 'loading') return;
+
+    const actorPersonId =
+      inspectorActor === 'rosa' ? storyKeeperDemoIds.rosaPersonId : storyKeeperDemoIds.mayaPersonId;
+    const parsed = searchFamilyStoryInputSchema.safeParse({
+      familyId: storyKeeperDemoIds.familyId,
+      actorPersonId,
+      query: searchQuery,
+      limit: 10,
+    });
+    if (!parsed.success) {
+      setSearchResults([]);
+      setSearchStatus('idle');
+      setSearchError(null);
+      setSearchValidation(
+        searchQuery.length > 200
+          ? 'Search queries can be no more than 200 characters.'
+          : 'Enter a search with at least one letter or number.',
+      );
+      return;
+    }
+
+    const requestId = searchRequestRef.current + 1;
+    searchRequestRef.current = requestId;
+    setSearchStatus('loading');
+    setSearchResults([]);
+    setSearchValidation(null);
+    setSearchError(null);
+    try {
+      const response = await client.searchFamilyStory(parsed.data);
+      if (searchRequestRef.current !== requestId) return;
+      setSearchResults(response.results);
+      setSearchStatus('ready');
+    } catch (caught: unknown) {
+      if (searchRequestRef.current !== requestId) return;
+      setSearchResults([]);
+      if (caught instanceof StoryKeeperClientError && caught.code === 'validation') {
+        setSearchStatus('idle');
+        setSearchValidation('Enter a search with at least one letter or number.');
+        return;
+      }
+      if (caught instanceof StoryKeeperClientError && caught.code === 'unavailable') {
+        cancelSearch(true);
+        setConnectionStatus('error');
+        setToolCount(null);
+        showError(caught, 'Search is unavailable. Reconnect and try again.');
+        return;
+      }
+      setSearchStatus('error');
+      setSearchError(
+        caught instanceof StoryKeeperClientError && caught.code === 'authorization'
+          ? 'This family member is not authorized to search these stories.'
+          : 'Family story search could not be completed. Try again.',
+      );
     }
   }
 
@@ -934,6 +1014,7 @@ export function SimulatorApp({
     cancelInterviewRequest(true);
     cancelFamilyQuestionMutation(true);
     cancelChapterWork(true);
+    cancelSearch(true);
     setInspectorActor(actor);
     setNotice(
       actor === 'rosa'
@@ -960,9 +1041,15 @@ export function SimulatorApp({
     <AppShell activeSurface="simulator">
       <header className="page-heading simulator-heading">
         <div>
-          <p className="panel-label">Real MCP interview</p>
-          <h1>Talk with Story Keeper</h1>
-          <p>Continue Rosa’s story through the durable family interview.</p>
+          <p className="panel-label">
+            {activeView === 'interview' ? 'Real MCP interview' : 'Real MCP search'}
+          </p>
+          <h1>{activeView === 'interview' ? 'Talk with Story Keeper' : 'Search family stories'}</h1>
+          <p>
+            {activeView === 'interview'
+              ? 'Continue Rosa’s story through the durable family interview.'
+              : 'Explore approved family history without exposing private drafts or pending memories.'}
+          </p>
         </div>
         <div className="connection-card" aria-label="MCP connection">
           <p className="connection-state" data-state={connectionStatus} role="status">
@@ -989,125 +1076,169 @@ export function SimulatorApp({
         </div>
       )}
 
-      <div className="simulator-layout">
-        {inspectorActor === 'rosa' ? (
-          <section
-            className="surface-panel conversation-panel"
-            aria-labelledby="conversation-title"
-          >
-            <div className="conversation-topline">
-              <div>
-                <p className="panel-label">Conversation with Rosa</p>
-                <h2 id="conversation-title">One memory at a time</h2>
-              </div>
-              <button
-                className="primary-button"
-                type="button"
-                disabled={!isConnected || requestStatus !== 'idle'}
-                onClick={() => void startInterview()}
-              >
-                {requestStatus === 'starting' ? 'Resuming…' : 'Start / Resume interview'}
-              </button>
-            </div>
+      <nav className="simulator-view-nav" aria-label="Simulator sections">
+        <button
+          type="button"
+          aria-label="Open interview"
+          aria-current={activeView === 'interview' ? 'page' : undefined}
+          onClick={() => {
+            setActiveView('interview');
+          }}
+        >
+          Interview
+        </button>
+        <button
+          type="button"
+          aria-label="Open search"
+          aria-current={activeView === 'search' ? 'page' : undefined}
+          onClick={() => {
+            setActiveView('search');
+          }}
+        >
+          Search
+        </button>
+      </nav>
 
-            <div className="question-region" aria-live="polite" aria-atomic="true">
-              {question === null ? (
-                <p className="empty-copy">
-                  {isConnected
-                    ? 'Choose Start / Resume interview to ask Rosa’s current question.'
-                    : 'Connect to the Story Keeper server to load Rosa’s real interview.'}
-                </p>
-              ) : question.status === 'complete' ? (
-                <div>
-                  <p className="panel-label">Interview complete</p>
-                  <p className="current-question">Rosa has answered every question for now.</p>
-                </div>
-              ) : (
-                <div>
-                  <p className="panel-label">Story Keeper asks</p>
-                  <p className="current-question">{question.questionText}</p>
-                </div>
-              )}
-            </div>
-
-            <form
-              className="answer-form"
-              onSubmit={(event) => {
-                void submitAnswer(event);
-              }}
+      {activeView === 'search' ? (
+        <SearchPanel
+          actor={inspectorActor}
+          connected={isConnected}
+          query={searchQuery}
+          status={searchStatus}
+          results={searchResults}
+          validationMessage={searchValidation}
+          errorMessage={searchError}
+          onActorChange={changeInspectorActor}
+          onQueryChange={(query) => {
+            setSearchQuery(query);
+            setSearchStatus('idle');
+            setSearchResults([]);
+            setSearchValidation(null);
+            setSearchError(null);
+          }}
+          onSubmit={() => void submitSearch()}
+        />
+      ) : (
+        <div className="simulator-layout">
+          {inspectorActor === 'rosa' ? (
+            <section
+              className="surface-panel conversation-panel"
+              aria-labelledby="conversation-title"
             >
-              <label htmlFor="story-answer">Rosa’s answer</label>
-              <textarea
-                id="story-answer"
-                name="story-answer"
-                rows={5}
-                maxLength={maximumRawAnswerLength}
-                value={answer}
-                disabled={question?.status !== 'question' || requestStatus === 'saving'}
-                onChange={(event) => {
-                  setAnswer(event.currentTarget.value);
-                }}
-                placeholder="Type Rosa’s memory here…"
-              />
-              <div className="answer-actions">
-                <span>{answer.length.toLocaleString()} / 20,000 characters</span>
+              <div className="conversation-topline">
+                <div>
+                  <p className="panel-label">Conversation with Rosa</p>
+                  <h2 id="conversation-title">One memory at a time</h2>
+                </div>
                 <button
                   className="primary-button"
-                  type="submit"
-                  disabled={
-                    question?.status !== 'question' ||
-                    requestStatus === 'saving' ||
-                    answer.trim().length === 0
-                  }
+                  type="button"
+                  disabled={!isConnected || requestStatus !== 'idle'}
+                  onClick={() => void startInterview()}
                 >
-                  {requestStatus === 'saving' ? 'Saving…' : 'Submit answer'}
+                  {requestStatus === 'starting' ? 'Resuming…' : 'Start / Resume interview'}
                 </button>
               </div>
-            </form>
-            <p className="save-status" role="status" aria-live="polite">
-              {notice}
-            </p>
-            <ProcessingStatus
-              phase={processingPhase}
-              onCheckAgain={() => void beginProcessingRefresh(processingBaselineRef.current)}
+
+              <div className="question-region" aria-live="polite" aria-atomic="true">
+                {question === null ? (
+                  <p className="empty-copy">
+                    {isConnected
+                      ? 'Choose Start / Resume interview to ask Rosa’s current question.'
+                      : 'Connect to the Story Keeper server to load Rosa’s real interview.'}
+                  </p>
+                ) : question.status === 'complete' ? (
+                  <div>
+                    <p className="panel-label">Interview complete</p>
+                    <p className="current-question">Rosa has answered every question for now.</p>
+                  </div>
+                ) : (
+                  <div>
+                    <p className="panel-label">Story Keeper asks</p>
+                    <p className="current-question">{question.questionText}</p>
+                  </div>
+                )}
+              </div>
+
+              <form
+                className="answer-form"
+                onSubmit={(event) => {
+                  void submitAnswer(event);
+                }}
+              >
+                <label htmlFor="story-answer">Rosa’s answer</label>
+                <textarea
+                  id="story-answer"
+                  name="story-answer"
+                  rows={5}
+                  maxLength={maximumRawAnswerLength}
+                  value={answer}
+                  disabled={question?.status !== 'question' || requestStatus === 'saving'}
+                  onChange={(event) => {
+                    setAnswer(event.currentTarget.value);
+                  }}
+                  placeholder="Type Rosa’s memory here…"
+                />
+                <div className="answer-actions">
+                  <span>{answer.length.toLocaleString()} / 20,000 characters</span>
+                  <button
+                    className="primary-button"
+                    type="submit"
+                    disabled={
+                      question?.status !== 'question' ||
+                      requestStatus === 'saving' ||
+                      answer.trim().length === 0
+                    }
+                  >
+                    {requestStatus === 'saving' ? 'Saving…' : 'Submit answer'}
+                  </button>
+                </div>
+              </form>
+              <p className="save-status" role="status" aria-live="polite">
+                {notice}
+              </p>
+              <ProcessingStatus
+                phase={processingPhase}
+                onCheckAgain={() => void beginProcessingRefresh(processingBaselineRef.current)}
+              />
+            </section>
+          ) : (
+            <FamilyQuestionComposer
+              narratorName={narratorTarget?.displayName ?? null}
+              questionText={familyQuestionText}
+              connected={
+                isConnected &&
+                (storyContext?.actor.role === 'relative' || storyContext?.actor.role === 'child')
+              }
+              submitting={familyQuestionSubmitting}
+              validationMessage={familyQuestionValidation}
+              notice={familyQuestionNotice}
+              contextStatus={notice}
+              onQuestionChange={(questionText) => {
+                setFamilyQuestionText(questionText);
+                setFamilyQuestionValidation(null);
+                setFamilyQuestionNotice(null);
+              }}
+              onSubmit={() => void submitFamilyQuestion()}
             />
-          </section>
-        ) : (
-          <FamilyQuestionComposer
-            narratorName={narratorTarget?.displayName ?? null}
-            questionText={familyQuestionText}
-            connected={
-              isConnected &&
-              (storyContext?.actor.role === 'relative' || storyContext?.actor.role === 'child')
-            }
-            submitting={familyQuestionSubmitting}
-            validationMessage={familyQuestionValidation}
-            notice={familyQuestionNotice}
-            contextStatus={notice}
-            onQuestionChange={(questionText) => {
-              setFamilyQuestionText(questionText);
-              setFamilyQuestionValidation(null);
-              setFamilyQuestionNotice(null);
-            }}
-            onSubmit={() => void submitFamilyQuestion()}
-          />
-        )}
+          )}
 
-        <aside className="surface-panel visual-placeholder" aria-labelledby="visual-title">
-          <div className="memory-window" aria-hidden="true">
-            <span />
-          </div>
-          <div>
-            <p className="panel-label">Story visual</p>
-            <h2 id="visual-title">Rosa’s family memories</h2>
-            <p className="empty-copy">
-              Interview questions and answers come only from the connected Story Keeper backend.
-            </p>
-          </div>
-        </aside>
-      </div>
+          <aside className="surface-panel visual-placeholder" aria-labelledby="visual-title">
+            <div className="memory-window" aria-hidden="true">
+              <span />
+            </div>
+            <div>
+              <p className="panel-label">Story visual</p>
+              <h2 id="visual-title">Rosa’s family memories</h2>
+              <p className="empty-copy">
+                Interview questions and answers come only from the connected Story Keeper backend.
+              </p>
+            </div>
+          </aside>
+        </div>
+      )}
 
-      {inspectorActor === 'rosa' ? (
+      {activeView === 'interview' && inspectorActor === 'rosa' ? (
         <ChapterDraftPanel
           narratorName={storyContext?.actor.displayName ?? 'the narrator'}
           connected={isConnected && storyContext?.actor.role === 'narrator'}
@@ -1135,7 +1266,7 @@ export function SimulatorApp({
         />
       ) : null}
 
-      {inspectorActor === 'rosa' ? (
+      {activeView === 'interview' && inspectorActor === 'rosa' ? (
         <>
           <ConflictReviewList
             conflicts={conflicts}
@@ -1151,33 +1282,41 @@ export function SimulatorApp({
         </>
       ) : null}
 
-      <PendingMemoryList
-        context={storyContext}
-        highlightedIds={newMemoryIds}
-        connected={isConnected}
-        loading={inspectorStatus === 'loading'}
-        canManage={inspectorActor === 'rosa'}
-        activeMutation={activeMemoryMutation}
-        notice={memoryMutationNotice}
-        onMutate={(targetType, targetId, action) => {
-          void mutateMemory(targetType, targetId, action);
-        }}
-      />
+      {activeView === 'interview' ? (
+        <>
+          <PendingMemoryList
+            context={storyContext}
+            highlightedIds={newMemoryIds}
+            connected={isConnected}
+            loading={inspectorStatus === 'loading'}
+            canManage={inspectorActor === 'rosa'}
+            activeMutation={activeMemoryMutation}
+            notice={memoryMutationNotice}
+            onMutate={(targetType, targetId, action) => {
+              void mutateMemory(targetType, targetId, action);
+            }}
+          />
 
-      <DeveloperMemoryInspector
-        actor={inspectorActor}
-        context={storyContext}
-        conflicts={conflicts}
-        interviewState={
-          question?.status === 'complete' ? 'complete' : interviewId === null ? 'none' : 'active'
-        }
-        currentQuestion={question?.status === 'question' ? question.questionText : null}
-        status={inspectorStatus}
-        error={inspectorError}
-        connected={isConnected}
-        onActorChange={changeInspectorActor}
-        onRefresh={() => void loadInspector(inspectorActor, interviewId)}
-      />
+          <DeveloperMemoryInspector
+            actor={inspectorActor}
+            context={storyContext}
+            conflicts={conflicts}
+            interviewState={
+              question?.status === 'complete'
+                ? 'complete'
+                : interviewId === null
+                  ? 'none'
+                  : 'active'
+            }
+            currentQuestion={question?.status === 'question' ? question.questionText : null}
+            status={inspectorStatus}
+            error={inspectorError}
+            connected={isConnected}
+            onActorChange={changeInspectorActor}
+            onRefresh={() => void loadInspector(inspectorActor, interviewId)}
+          />
+        </>
+      ) : null}
     </AppShell>
   );
 }

@@ -2,7 +2,14 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { FetchLike, Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { CallToolResultSchema, type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import type { PresentationReadInput, TimelineResponse } from '@story-keeper/shared';
+import {
+  searchFamilyStoryInputSchema,
+  searchFamilyStoryOutputSchema,
+  type PresentationReadInput,
+  type SearchFamilyStoryInput,
+  type SearchFamilyStoryOutput,
+  type TimelineResponse,
+} from '@story-keeper/shared';
 import type { z } from 'zod';
 
 import {
@@ -114,6 +121,7 @@ export interface StoryKeeperClient {
   requestChapterDraft(input: RequestChapterDraftInput): Promise<RequestChapterDraftResult>;
   reviewChapter(input: ReviewChapterInput): Promise<ReviewChapterResult>;
   getTimeline(input: PresentationReadInput): Promise<TimelineResponse>;
+  searchFamilyStory(input: SearchFamilyStoryInput): Promise<SearchFamilyStoryOutput>;
 }
 
 export interface McpSession {
@@ -273,6 +281,15 @@ export class StoryKeeperMcpClient implements StoryKeeperClient {
     );
   }
 
+  public searchFamilyStory(input: SearchFamilyStoryInput): Promise<SearchFamilyStoryOutput> {
+    return this.callValidatedTool(
+      'search_family_story',
+      searchFamilyStoryInputSchema,
+      searchFamilyStoryOutputSchema,
+      input,
+    );
+  }
+
   private async callValidatedTool<TInput extends Record<string, unknown>, TOutput>(
     name: string,
     inputSchema: z.ZodType<TInput>,
@@ -362,6 +379,12 @@ function assertFrozenToolSet(actualTools: readonly string[]): void {
 function mapToolError(result: CallToolResult): StoryKeeperClientError {
   const text = result.content.find((item) => item.type === 'text');
   const serverCode = text?.type === 'text' ? /^([A-Z][A-Z0-9_]+):/.exec(text.text)?.[1] : undefined;
+  if (serverCode === 'SEARCH_QUERY_INVALID') {
+    return new StoryKeeperClientError(
+      'validation',
+      'Enter a search with at least one letter or number.',
+    );
+  }
   if (serverCode === 'QUESTION_TEXT_INVALID') {
     return new StoryKeeperClientError(
       'validation',

@@ -244,6 +244,9 @@ function createClient() {
       }),
     ),
     getTimeline: vi.fn<StoryKeeperClient['getTimeline']>(() => Promise.resolve({ items: [] })),
+    searchFamilyStory: vi.fn<StoryKeeperClient['searchFamilyStory']>(() =>
+      Promise.resolve({ results: [] }),
+    ),
   } satisfies StoryKeeperClient;
 }
 
@@ -1338,5 +1341,183 @@ describe('SimulatorApp', () => {
       expect(screen.queryByText('Beside the Old Market')).not.toBeInTheDocument();
       expect(screen.queryByText(/Approving/)).not.toBeInTheDocument();
     });
+  });
+
+  it('submits canonical search input, preserves returned order, and distinguishes invalid from empty', async () => {
+    const client = createClient();
+    client.searchFamilyStory.mockResolvedValue({
+      results: [
+        {
+          sourceType: 'timeline_event',
+          sourceId: '60000000-0000-4000-8000-000000000001',
+          title: 'Zulu timeline',
+          snippet: 'Élodie remembered the garden.',
+          personId: storyKeeperDemoIds.rosaPersonId,
+          personDisplayName: 'Rosa',
+          date: { earliestYear: 1962, latestYear: 1964, precision: 'range' },
+          rank: -2,
+        },
+        {
+          sourceType: 'fact',
+          sourceId: '60000000-0000-4000-8000-000000000002',
+          title: 'Alpha memory',
+          snippet: 'A second result.',
+          personId: null,
+          personDisplayName: null,
+          date: null,
+          rank: -1,
+        },
+      ],
+    });
+    render(<SimulatorApp createClient={() => client} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    await screen.findByText('15 tools verified');
+    fireEvent.click(screen.getByRole('button', { name: 'Open search' }));
+
+    const input = screen.getByLabelText('Search family stories');
+    fireEvent.change(input, { target: { value: '  Élodie OR NEAR  ' } });
+    fireEvent.submit(screen.getByRole('search'));
+    await screen.findByText('2 results found.');
+    expect(client.searchFamilyStory).toHaveBeenCalledWith({
+      familyId: storyKeeperDemoIds.familyId,
+      actorPersonId: storyKeeperDemoIds.rosaPersonId,
+      query: 'Élodie OR NEAR',
+      limit: 10,
+    });
+    expect(
+      screen.getAllByRole('listitem').map((item) => within(item).getByRole('heading').textContent),
+    ).toEqual(['Zulu timeline', 'Alpha memory']);
+
+    fireEvent.change(input, { target: { value: 'no matches' } });
+    client.searchFamilyStory.mockResolvedValueOnce({ results: [] });
+    fireEvent.submit(screen.getByRole('search'));
+    await screen.findByText('No matching family stories found.');
+
+    const callsBeforeInvalid = client.searchFamilyStory.mock.calls.length;
+    fireEvent.change(input, { target: { value: '   ' } });
+    fireEvent.submit(screen.getByRole('search'));
+    expect(screen.getByRole('alert')).toHaveTextContent('at least one letter or number');
+    fireEvent.change(input, { target: { value: 'x'.repeat(201) } });
+    fireEvent.submit(screen.getByRole('search'));
+    expect(screen.getByRole('alert')).toHaveTextContent('no more than 200 characters');
+    expect(client.searchFamilyStory).toHaveBeenCalledTimes(callsBeforeInvalid);
+  });
+
+  it('maps punctuation-only and unknown search failures without exposing backend details', async () => {
+    const client = createClient();
+    client.searchFamilyStory
+      .mockRejectedValueOnce(
+        new StoryKeeperClientError(
+          'validation',
+          'Enter a search with at least one letter or number.',
+        ),
+      )
+      .mockRejectedValueOnce(new Error('SQLITE_ERROR: private/path/story.sqlite'));
+    render(<SimulatorApp createClient={() => client} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    await screen.findByText('15 tools verified');
+    fireEvent.click(screen.getByRole('button', { name: 'Open search' }));
+    const input = screen.getByLabelText('Search family stories');
+
+    fireEvent.change(input, { target: { value: '" * ( )' } });
+    fireEvent.submit(screen.getByRole('search'));
+    expect(await screen.findByRole('alert')).toHaveTextContent('at least one letter or number');
+    expect(screen.queryByText(/SQLITE_ERROR|FTS5|private\/path/i)).not.toBeInTheDocument();
+
+    fireEvent.change(input, { target: { value: 'garden' } });
+    fireEvent.submit(screen.getByRole('search'));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Family story search could not be completed. Try again.',
+    );
+    expect(screen.queryByText(/SQLITE_ERROR|private\/path/i)).not.toBeInTheDocument();
+  });
+
+  it('clears Rosa search state and ignores delayed success or failure after switching to Maya', async () => {
+    let finishSearch:
+      ((result: Awaited<ReturnType<StoryKeeperClient['searchFamilyStory']>>) => void) | undefined;
+    const successClient = createClient();
+    successClient.searchFamilyStory = vi.fn<StoryKeeperClient['searchFamilyStory']>(
+      () =>
+        new Promise((resolve) => {
+          finishSearch = resolve;
+        }),
+    );
+    const { unmount } = render(<SimulatorApp createClient={() => successClient} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    await screen.findByText('15 tools verified');
+    fireEvent.click(screen.getByRole('button', { name: 'Open search' }));
+    fireEvent.change(screen.getByLabelText('Search family stories'), {
+      target: { value: 'Rosa private query' },
+    });
+    fireEvent.submit(screen.getByRole('search'));
+    await screen.findByText('Searching approved family stories…');
+    fireEvent.change(screen.getByLabelText('Search as'), { target: { value: 'maya' } });
+    await waitFor(() => {
+      expect(screen.getByLabelText('Search family stories')).toHaveValue('');
+      expect(screen.getByText('Enter a search to begin.')).toBeVisible();
+    });
+    finishSearch?.({
+      results: [
+        {
+          sourceType: 'fact',
+          sourceId: '60000000-0000-4000-8000-000000000003',
+          title: 'Rosa private result',
+          snippet: 'Rosa private snippet',
+          personId: null,
+          personDisplayName: null,
+          date: null,
+          rank: -1,
+        },
+      ],
+    });
+    await waitFor(() => {
+      expect(screen.queryByText('Rosa private result')).not.toBeInTheDocument();
+      expect(screen.queryByText('1 result found.')).not.toBeInTheDocument();
+    });
+    unmount();
+
+    let failSearch: ((reason?: unknown) => void) | undefined;
+    const failureClient = createClient();
+    failureClient.searchFamilyStory = vi.fn<StoryKeeperClient['searchFamilyStory']>(
+      () =>
+        new Promise((_resolve, reject) => {
+          failSearch = reject;
+        }),
+    );
+    render(<SimulatorApp createClient={() => failureClient} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    await screen.findByText('15 tools verified');
+    fireEvent.click(screen.getByRole('button', { name: 'Open search' }));
+    fireEvent.change(screen.getByLabelText('Search family stories'), {
+      target: { value: 'Rosa failing query' },
+    });
+    fireEvent.submit(screen.getByRole('search'));
+    fireEvent.change(screen.getByLabelText('Search as'), { target: { value: 'maya' } });
+    failSearch?.(new Error('late private failure'));
+    await waitFor(() => {
+      expect(screen.getByLabelText('Search family stories')).toHaveValue('');
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      expect(screen.queryByText(/late private failure/i)).not.toBeInTheDocument();
+    });
+  });
+
+  it('invalidates search state on reconnect and does not replay the previous query', async () => {
+    const client = createClient();
+    client.searchFamilyStory.mockResolvedValue({ results: [] });
+    render(<SimulatorApp createClient={() => client} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    await screen.findByText('15 tools verified');
+    fireEvent.click(screen.getByRole('button', { name: 'Open search' }));
+    fireEvent.change(screen.getByLabelText('Search family stories'), {
+      target: { value: 'private reconnect query' },
+    });
+    fireEvent.submit(screen.getByRole('search'));
+    await screen.findByText('No matching family stories found.');
+    fireEvent.click(screen.getByRole('button', { name: 'Reconnect' }));
+    await waitFor(() => {
+      expect(screen.getByLabelText('Search family stories')).toHaveValue('');
+      expect(screen.getByText('Enter a search to begin.')).toBeVisible();
+    });
+    expect(client.searchFamilyStory).toHaveBeenCalledTimes(1);
   });
 });

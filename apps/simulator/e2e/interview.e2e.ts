@@ -400,6 +400,105 @@ test('Rosa and Maya use the real memory and family-question lifecycle safely', a
     failureStudio.getByText(/INVALID_CHAPTER_OUTPUT|ZodError|draft_chapter|retry count|worker/i),
   ).toHaveCount(0);
 
+  const searchQuery = 'old market';
+  const privateSearchDraft = 'Maya private search draft';
+  await page.getByRole('button', { name: 'Open search' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Search family stories', level: 1 }),
+  ).toBeVisible();
+  const searchInput = page.getByRole('searchbox', { name: 'Search family stories' });
+  await searchInput.fill(searchQuery);
+  await page.getByRole('button', { name: 'Search', exact: true }).focus();
+  await page.keyboard.press('Enter');
+  const searchResults = page.getByRole('list', { name: 'Family story search results' });
+  await expect(
+    searchResults.getByRole('heading', { name: 'Moved near the old market' }),
+  ).toBeVisible();
+  await expect(searchResults.getByRole('heading', { name: 'Beside the Old Market' })).toBeVisible();
+  const rosaSearchOrder = await searchResults
+    .getByRole('listitem')
+    .getByRole('heading')
+    .allTextContents();
+  expect(rosaSearchOrder).toHaveLength(2);
+  await page.getByRole('button', { name: 'Search', exact: true }).click();
+  await expect(searchResults.getByRole('listitem')).toHaveCount(2);
+  expect(await searchResults.getByRole('listitem').getByRole('heading').allTextContents()).toEqual(
+    rosaSearchOrder,
+  );
+
+  await searchInput.fill('square');
+  await page.getByRole('button', { name: 'Search', exact: true }).click();
+  await expect(page.getByText('No matching family stories found.')).toBeVisible();
+  await expect(page.getByText('The old market square', { exact: true })).toHaveCount(0);
+  await searchInput.fill('Devika');
+  await page.getByRole('button', { name: 'Search', exact: true }).click();
+  await expect(page.getByText('No matching family stories found.')).toBeVisible();
+  await searchInput.fill('" * ( )');
+  await page.getByRole('button', { name: 'Search', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('at least one letter or number');
+  await expect(page.getByText(/SQLite|FTS5|MATCH syntax|SEARCH_QUERY_INVALID/i)).toHaveCount(0);
+
+  await searchInput.fill(searchQuery);
+  await page.getByRole('button', { name: 'Search', exact: true }).click();
+  await expect(searchResults.getByRole('listitem')).toHaveCount(2);
+  await page.screenshot({ path: testInfo.outputPath('phase-9-search-820.png'), fullPage: true });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  await page.setViewportSize({ width: 1440, height: 900 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  await page.screenshot({ path: testInfo.outputPath('phase-9-search-1440.png'), fullPage: true });
+  await page.setViewportSize({ width: 820, height: 900 });
+
+  await page.getByLabel('Search as').selectOption('maya');
+  await expect(searchInput).toHaveValue('');
+  await expect(page.getByRole('list', { name: 'Family story search results' })).toHaveCount(0);
+  await expect(page.getByText('Enter a search to begin.')).toBeVisible();
+  await searchInput.fill(searchQuery);
+  await page.getByRole('button', { name: 'Search', exact: true }).click();
+  await expect(searchResults.getByRole('listitem')).toHaveCount(2);
+  expect(await searchResults.getByRole('listitem').getByRole('heading').allTextContents()).toEqual(
+    rosaSearchOrder,
+  );
+
+  const searchPersistence = await page.evaluate(
+    async ({ query, privateSnippet }) => ({
+      local: JSON.stringify(window.localStorage),
+      session: JSON.stringify(window.sessionStorage),
+      indexedDbNames: await window.indexedDB
+        .databases()
+        .then((databases) => databases.flatMap(({ name }) => (name === undefined ? [] : [name]))),
+      url: window.location.href,
+      query,
+      privateSnippet,
+    }),
+    { query: searchQuery, privateSnippet: chapterBody },
+  );
+  expect(searchPersistence.local).not.toContain(searchQuery);
+  expect(searchPersistence.local).not.toContain(chapterBody);
+  expect(searchPersistence.session).not.toContain(searchQuery);
+  expect(searchPersistence.session).not.toContain(chapterBody);
+  expect(searchPersistence.indexedDbNames).toEqual([]);
+  expect(searchPersistence.url).not.toContain(encodeURIComponent(searchQuery));
+
+  await searchInput.fill(privateSearchDraft);
+  await page.reload();
+  await page.getByRole('button', { name: 'Connect' }).click();
+  await expect(page.getByText('15 tools verified')).toBeVisible();
+  await page.getByRole('button', { name: 'Open search' }).click();
+  const reloadedSearchInput = page.getByRole('searchbox', { name: 'Search family stories' });
+  await expect(reloadedSearchInput).toHaveValue('');
+  await expect(page.getByText(privateSearchDraft, { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('list', { name: 'Family story search results' })).toHaveCount(0);
+  await page.getByLabel('Search as').selectOption('maya');
+  await reloadedSearchInput.fill(searchQuery);
+  await page.getByRole('button', { name: 'Search', exact: true }).click();
+  await expect(page.getByRole('listitem')).toHaveCount(2);
+  await page.getByLabel('Search as').selectOption('rosa');
+  await page.getByRole('button', { name: 'Open interview' }).click();
+
   await page.setViewportSize({ width: 1440, height: 900 });
   await expect(page.getByRole('heading', { name: 'Needs clarification' })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
@@ -421,5 +520,7 @@ test('Rosa and Maya use the real memory and family-question lifecycle safely', a
   expect(consoleMessages.join('\n')).not.toContain(chapterTopic);
   expect(consoleMessages.join('\n')).not.toContain(chapterBody);
   expect(consoleMessages.join('\n')).not.toContain(failureTopic);
+  expect(consoleMessages.join('\n')).not.toContain(searchQuery);
+  expect(consoleMessages.join('\n')).not.toContain(privateSearchDraft);
   expect(consoleErrors).toEqual([]);
 });
