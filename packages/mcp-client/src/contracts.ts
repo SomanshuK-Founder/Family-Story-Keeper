@@ -5,6 +5,7 @@ import {
   contradictionResolutionTypeSchema,
   maximumRawAnswerLength,
   presentationReadInputSchema,
+  recoverableChapterDraftSchema,
   relationshipTypeSchema,
   storyItemTargetTypeSchema,
   storyItemStatusSchema,
@@ -116,6 +117,7 @@ export const getStoryContextResultSchema = z.object({
       sourceCount: z.number().int().positive(),
     }),
   ),
+  recoverableChapterDrafts: z.array(recoverableChapterDraftSchema).optional(),
   conflicts: z.array(
     z.object({
       contradictionId: opaqueIdSchema,
@@ -223,6 +225,45 @@ export const queueFamilyQuestionResultSchema = z.object({
   status: z.literal('queued'),
 });
 
+export const maximumChapterTopicLength = 200;
+
+export const requestChapterDraftInputSchema = z.object({
+  familyId: opaqueIdSchema,
+  actorPersonId: opaqueIdSchema,
+  narratorPersonId: opaqueIdSchema,
+  chapterTopic: z.string().trim().min(1).max(maximumChapterTopicLength),
+});
+
+export const requestChapterDraftResultSchema = z.object({
+  status: z.enum(['queued', 'insufficient_sources']),
+  chapterDraftId: opaqueIdSchema.nullable(),
+  jobId: opaqueIdSchema.nullable(),
+  sourceCount: z.number().int().nonnegative(),
+});
+
+export const reviewChapterInputSchema = z.object({
+  familyId: opaqueIdSchema,
+  actorPersonId: opaqueIdSchema,
+  chapterDraftId: opaqueIdSchema,
+});
+
+export const reviewChapterResultSchema = z.object({
+  chapterDraftId: opaqueIdSchema,
+  narratorPersonId: opaqueIdSchema,
+  chapterTopic: z.string(),
+  title: z.string().nullable(),
+  body: z.string().nullable(),
+  status: z.enum(['generating', 'pending_review', 'approved', 'rejected', 'failed', 'superseded']),
+  sources: z.array(
+    z.object({
+      type: z.enum(['fact', 'relationship', 'timeline_event']),
+      sourceId: opaqueIdSchema,
+      label: z.string(),
+      summary: z.string(),
+    }),
+  ),
+});
+
 export { presentationReadInputSchema, timelineResponseSchema };
 
 export type StartInterviewInput = z.infer<typeof startInterviewInputSchema>;
@@ -243,3 +284,7 @@ export type DeletePendingMemoryInput = z.infer<typeof deletePendingMemoryInputSc
 export type DeletePendingMemoryResult = z.infer<typeof deletePendingMemoryResultSchema>;
 export type QueueFamilyQuestionInput = z.infer<typeof queueFamilyQuestionInputSchema>;
 export type QueueFamilyQuestionResult = z.infer<typeof queueFamilyQuestionResultSchema>;
+export type RequestChapterDraftInput = z.infer<typeof requestChapterDraftInputSchema>;
+export type RequestChapterDraftResult = z.infer<typeof requestChapterDraftResultSchema>;
+export type ReviewChapterInput = z.infer<typeof reviewChapterInputSchema>;
+export type ReviewChapterResult = z.infer<typeof reviewChapterResultSchema>;

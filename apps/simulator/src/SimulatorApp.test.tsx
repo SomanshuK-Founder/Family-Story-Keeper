@@ -19,6 +19,8 @@ const firstQuestionId = '10000000-0000-4000-8000-000000000002';
 const secondQuestionId = '10000000-0000-4000-8000-000000000003';
 const answerId = '10000000-0000-4000-8000-000000000004';
 const privateCandidatePersonId = '10000000-0000-4000-8000-000000000005';
+const chapterDraftId = '10000000-0000-4000-8000-000000000006';
+const chapterJobId = '10000000-0000-4000-8000-000000000007';
 
 const rosaContext: GetStoryContextResult = {
   actor: { id: storyKeeperDemoIds.rosaPersonId, displayName: 'Rosa', role: 'narrator' },
@@ -62,6 +64,35 @@ const mayaContext: GetStoryContextResult = {
   timelineEvents: [],
   chapters: [],
   conflicts: [],
+};
+
+const generatingChapterContext: GetStoryContextResult = {
+  ...rosaContext,
+  recoverableChapterDrafts: [{ chapterDraftId, status: 'generating' }],
+};
+
+const reviewableChapterContext: GetStoryContextResult = {
+  ...rosaContext,
+  recoverableChapterDrafts: [{ chapterDraftId, status: 'pending_review' }],
+};
+
+const failedChapterContext: GetStoryContextResult = {
+  ...rosaContext,
+  recoverableChapterDrafts: [{ chapterDraftId, status: 'failed' }],
+};
+
+const approvedChapterContext: GetStoryContextResult = {
+  ...rosaContext,
+  chapters: [
+    {
+      id: chapterDraftId,
+      narratorPersonId: storyKeeperDemoIds.rosaPersonId,
+      title: 'Beside the Old Market',
+      body: 'Rosa remembered a garden and the old market nearby.',
+      status: 'approved',
+      sourceCount: 2,
+    },
+  ],
 };
 
 const newRosaContext: GetStoryContextResult = {
@@ -178,6 +209,38 @@ function createClient() {
       Promise.resolve({
         queuedQuestionId: '40000000-0000-4000-8000-000000000001',
         status: 'queued',
+      }),
+    ),
+    requestChapterDraft: vi.fn<StoryKeeperClient['requestChapterDraft']>(() =>
+      Promise.resolve({
+        status: 'queued',
+        chapterDraftId,
+        jobId: chapterJobId,
+        sourceCount: 2,
+      }),
+    ),
+    reviewChapter: vi.fn<StoryKeeperClient['reviewChapter']>(() =>
+      Promise.resolve({
+        chapterDraftId,
+        narratorPersonId: storyKeeperDemoIds.rosaPersonId,
+        chapterTopic: 'Rosa’s early years',
+        title: 'Beside the Old Market',
+        body: 'Rosa remembered a garden and the old market nearby.',
+        status: 'pending_review',
+        sources: [
+          {
+            type: 'fact',
+            sourceId: '50000000-0000-4000-8000-000000000001',
+            label: 'Favorite place: The private garden',
+            summary: 'Private persisted source summary',
+          },
+          {
+            type: 'timeline_event',
+            sourceId: '50000000-0000-4000-8000-000000000002',
+            label: 'Moved near the old market',
+            summary: 'Private persisted event summary',
+          },
+        ],
       }),
     ),
     getTimeline: vi.fn<StoryKeeperClient['getTimeline']>(() => Promise.resolve({ items: [] })),
@@ -942,6 +1005,338 @@ describe('SimulatorApp', () => {
     await waitFor(() => {
       expect(screen.queryByText('Rosa private queued interview question')).not.toBeInTheDocument();
       expect(screen.getByRole('heading', { name: 'Ask Rosa a question' })).toBeInTheDocument();
+    });
+  });
+
+  it('requests a chapter, recovers its canonical draft, reviews it, and approves it', async () => {
+    const client = createClient();
+    client.getStoryContext = vi
+      .fn<StoryKeeperClient['getStoryContext']>()
+      .mockResolvedValueOnce(rosaContext)
+      .mockResolvedValueOnce(generatingChapterContext)
+      .mockResolvedValueOnce(reviewableChapterContext)
+      .mockResolvedValueOnce(approvedChapterContext);
+    render(
+      <SimulatorApp
+        createClient={() => client}
+        chapterPollingTiming={{ pollIntervalMs: 1, maxAttempts: 3 }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    await screen.findByText('15 tools verified');
+    const topic = screen.getByLabelText('What should this chapter focus on?');
+    fireEvent.change(topic, { target: { value: '  Rosa’s early years  ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Generate chapter' }));
+
+    expect(client.requestChapterDraft).toHaveBeenCalledWith({
+      familyId: storyKeeperDemoIds.familyId,
+      actorPersonId: storyKeeperDemoIds.rosaPersonId,
+      narratorPersonId: storyKeeperDemoIds.rosaPersonId,
+      chapterTopic: 'Rosa’s early years',
+    });
+    expect(
+      await screen.findByText('Chapter request accepted. Story Keeper is drafting it for review.'),
+    ).toHaveAttribute('role', 'status');
+    expect(await screen.findByRole('heading', { name: 'Beside the Old Market' })).toBeVisible();
+    expect(client.reviewChapter).toHaveBeenCalledWith({
+      familyId: storyKeeperDemoIds.familyId,
+      actorPersonId: storyKeeperDemoIds.rosaPersonId,
+      chapterDraftId,
+    });
+    expect(screen.queryByText('Private persisted source summary')).not.toBeInTheDocument();
+    expect(screen.queryByText('50000000-0000-4000-8000-000000000001')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Approve chapter' }));
+    expect(
+      await screen.findByText('Chapter approved. Story Keeper refreshed the latest family story.'),
+    ).toHaveAttribute('role', 'status');
+    expect(client.approveStoryItem).toHaveBeenCalledWith({
+      familyId: storyKeeperDemoIds.familyId,
+      actorPersonId: storyKeeperDemoIds.rosaPersonId,
+      targetType: 'chapter',
+      targetId: chapterDraftId,
+      action: 'approve',
+    });
+    const familyStory = screen.getByRole('region', { name: 'Review story memories' });
+    expect(within(familyStory).getByText('Approved chapter')).toBeVisible();
+    expect(within(familyStory).getByText('Beside the Old Market')).toBeVisible();
+  });
+
+  it('validates chapter topics without truncating or submitting invalid text', async () => {
+    const client = createClient();
+    render(<SimulatorApp createClient={() => client} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    await screen.findByText('15 tools verified');
+    const topic = screen.getByLabelText('What should this chapter focus on?');
+    const tooLong = 'x'.repeat(201);
+    fireEvent.change(topic, { target: { value: tooLong } });
+    fireEvent.click(screen.getByRole('button', { name: 'Generate chapter' }));
+
+    expect(topic).toHaveValue(tooLong);
+    await waitFor(() => {
+      expect(topic).toHaveFocus();
+    });
+    expect(topic).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByText('Enter a chapter topic between 1 and 200 characters.')).toHaveAttribute(
+      'role',
+      'alert',
+    );
+    expect(client.requestChapterDraft).not.toHaveBeenCalled();
+  });
+
+  it('distinguishes accepted chapter mutations from a later canonical refresh failure', async () => {
+    const requestClient = createClient();
+    requestClient.getStoryContext = vi
+      .fn<StoryKeeperClient['getStoryContext']>()
+      .mockResolvedValueOnce(rosaContext)
+      .mockRejectedValueOnce(new StoryKeeperClientError('unavailable', 'Connection interrupted.'));
+    const { unmount } = render(<SimulatorApp createClient={() => requestClient} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    await screen.findByText('15 tools verified');
+    fireEvent.change(screen.getByLabelText('What should this chapter focus on?'), {
+      target: { value: 'Rosa’s early years' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Generate chapter' }));
+    expect(
+      await screen.findByText(
+        'The chapter request was accepted, but its latest status could not be loaded. Reconnect to continue.',
+      ),
+    ).toHaveAttribute('role', 'alert');
+    expect(screen.queryByText(/No chapter was created/)).not.toBeInTheDocument();
+    unmount();
+
+    const approvalClient = createClient();
+    approvalClient.getStoryContext = vi
+      .fn<StoryKeeperClient['getStoryContext']>()
+      .mockResolvedValueOnce(reviewableChapterContext)
+      .mockRejectedValueOnce(new StoryKeeperClientError('unavailable', 'Connection interrupted.'));
+    render(<SimulatorApp createClient={() => approvalClient} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    await screen.findByRole('heading', { name: 'Beside the Old Market' });
+    fireEvent.click(screen.getByRole('button', { name: 'Approve chapter' }));
+    expect(
+      await screen.findByText(
+        'Your chapter choice was saved, but the latest story state could not be loaded. Reconnect before continuing.',
+      ),
+    ).toHaveAttribute('role', 'alert');
+    expect(screen.queryByRole('button', { name: 'Approve chapter' })).not.toBeInTheDocument();
+  });
+
+  it('recovers a pending review after a fresh connection and handles failed drafts safely', async () => {
+    const reviewClient = createClient();
+    reviewClient.getStoryContext = vi.fn<StoryKeeperClient['getStoryContext']>(() =>
+      Promise.resolve(reviewableChapterContext),
+    );
+    const { unmount } = render(<SimulatorApp createClient={() => reviewClient} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    expect(await screen.findByRole('heading', { name: 'Beside the Old Market' })).toBeVisible();
+    expect(reviewClient.reviewChapter).toHaveBeenCalledWith({
+      familyId: storyKeeperDemoIds.familyId,
+      actorPersonId: storyKeeperDemoIds.rosaPersonId,
+      chapterDraftId,
+    });
+    expect(window.localStorage.length).toBe(0);
+    expect(window.sessionStorage.length).toBe(0);
+    expect(window.location.search).toBe('');
+    unmount();
+
+    const failedClient = createClient();
+    failedClient.getStoryContext = vi.fn<StoryKeeperClient['getStoryContext']>(() =>
+      Promise.resolve(failedChapterContext),
+    );
+    render(<SimulatorApp createClient={() => failedClient} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    expect(
+      await screen.findByRole('heading', { name: 'This chapter couldn’t be generated' }),
+    ).toBeVisible();
+    expect(screen.getByText(/Private provider details remain hidden/)).toBeVisible();
+    expect(screen.queryByText(/Chapter source references must be unique/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/INVALID_CHAPTER_OUTPUT/)).not.toBeInTheDocument();
+    expect(failedClient.reviewChapter).not.toHaveBeenCalled();
+  });
+
+  it('requires confirmation before rejecting a chapter and refreshes canonical state', async () => {
+    const client = createClient();
+    client.getStoryContext = vi
+      .fn<StoryKeeperClient['getStoryContext']>()
+      .mockResolvedValueOnce(reviewableChapterContext)
+      .mockResolvedValueOnce(rosaContext);
+    render(<SimulatorApp createClient={() => client} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    await screen.findByRole('heading', { name: 'Beside the Old Market' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reject chapter' }));
+    expect(client.approveStoryItem).not.toHaveBeenCalled();
+    const confirmation = screen.getByRole('group', { name: 'Reject this chapter?' });
+    expect(confirmation).toHaveFocus();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm chapter rejection' }));
+
+    expect(
+      await screen.findByText(
+        'Chapter rejected. It will not appear in family-visible story views.',
+      ),
+    ).toHaveAttribute('role', 'status');
+    expect(client.approveStoryItem).toHaveBeenCalledWith({
+      familyId: storyKeeperDemoIds.familyId,
+      actorPersonId: storyKeeperDemoIds.rosaPersonId,
+      targetType: 'chapter',
+      targetId: chapterDraftId,
+      action: 'reject',
+    });
+    expect(
+      screen.queryByRole('heading', { name: 'Beside the Old Market' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('does not leak a late chapter request response across an actor switch', async () => {
+    let finishRequest:
+      ((result: Awaited<ReturnType<StoryKeeperClient['requestChapterDraft']>>) => void) | undefined;
+    const client = createClient();
+    client.requestChapterDraft = vi.fn<StoryKeeperClient['requestChapterDraft']>(
+      () =>
+        new Promise((resolve) => {
+          finishRequest = resolve;
+        }),
+    );
+    render(<SimulatorApp createClient={() => client} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    await screen.findByText('15 tools verified');
+    fireEvent.change(screen.getByLabelText('What should this chapter focus on?'), {
+      target: { value: 'Rosa private chapter topic' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Generate chapter' }));
+    await screen.findByText('Sending chapter request…');
+    expect(screen.queryByRole('button', { name: 'Generate chapter' })).not.toBeInTheDocument();
+    expect(client.requestChapterDraft).toHaveBeenCalledTimes(1);
+
+    fireEvent.change(screen.getByLabelText('Inspect memory as'), { target: { value: 'maya' } });
+    await screen.findByRole('heading', { name: 'Ask Rosa a question' });
+    finishRequest?.({ status: 'queued', chapterDraftId, jobId: chapterJobId, sourceCount: 2 });
+    await waitFor(() => {
+      expect(screen.queryByText(/Rosa private chapter topic/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Chapter request accepted|Sending chapter request/)).toBeNull();
+      expect(screen.queryByRole('heading', { name: 'Create a chapter' })).not.toBeInTheDocument();
+    });
+  });
+
+  it('ignores a late post-request chapter context refresh after switching to Maya', async () => {
+    let finishRosaRefresh: ((context: GetStoryContextResult) => void) | undefined;
+    let rosaContextReads = 0;
+    const client = createClient();
+    client.getStoryContext = vi.fn<StoryKeeperClient['getStoryContext']>(({ actorPersonId }) => {
+      if (actorPersonId === storyKeeperDemoIds.mayaPersonId) return Promise.resolve(mayaContext);
+      rosaContextReads += 1;
+      if (rosaContextReads === 1) return Promise.resolve(rosaContext);
+      return new Promise((resolve) => {
+        finishRosaRefresh = resolve;
+      });
+    });
+    render(<SimulatorApp createClient={() => client} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    await screen.findByText('15 tools verified');
+    fireEvent.change(screen.getByLabelText('What should this chapter focus on?'), {
+      target: { value: 'Rosa private canonical refresh topic' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Generate chapter' }));
+    await waitFor(() => {
+      expect(finishRosaRefresh).toBeTypeOf('function');
+    });
+
+    fireEvent.change(screen.getByLabelText('Inspect memory as'), { target: { value: 'maya' } });
+    await screen.findByRole('heading', { name: 'Ask Rosa a question' });
+    finishRosaRefresh?.(reviewableChapterContext);
+
+    await waitFor(() => {
+      expect(screen.getByText('Viewing Maya’s approved family memory.')).toBeVisible();
+      expect(screen.queryByRole('heading', { name: 'Create a chapter' })).not.toBeInTheDocument();
+      expect(screen.queryByText('Rosa private canonical refresh topic')).not.toBeInTheDocument();
+      expect(screen.queryByText(/Chapter request accepted/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Drafting chapter|Preparing your review/)).not.toBeInTheDocument();
+      expect(screen.queryByText('Beside the Old Market')).not.toBeInTheDocument();
+      expect(screen.queryByText(chapterDraftId)).not.toBeInTheDocument();
+      expect(client.reviewChapter).not.toHaveBeenCalled();
+    });
+  });
+
+  it('ignores late review and approval refresh data after switching to Maya', async () => {
+    let finishReview:
+      ((result: Awaited<ReturnType<StoryKeeperClient['reviewChapter']>>) => void) | undefined;
+    const reviewClient = createClient();
+    reviewClient.getStoryContext = vi.fn<StoryKeeperClient['getStoryContext']>(
+      ({ actorPersonId }) =>
+        Promise.resolve(
+          actorPersonId === storyKeeperDemoIds.rosaPersonId
+            ? reviewableChapterContext
+            : mayaContext,
+        ),
+    );
+    reviewClient.reviewChapter = vi.fn<StoryKeeperClient['reviewChapter']>(
+      () =>
+        new Promise((resolve) => {
+          finishReview = resolve;
+        }),
+    );
+    const { unmount } = render(<SimulatorApp createClient={() => reviewClient} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    await screen.findByText('Preparing your review…');
+    fireEvent.change(screen.getByLabelText('Inspect memory as'), { target: { value: 'maya' } });
+    await screen.findByRole('heading', { name: 'Ask Rosa a question' });
+    finishReview?.(
+      await createClient().reviewChapter({
+        familyId: storyKeeperDemoIds.familyId,
+        actorPersonId: storyKeeperDemoIds.rosaPersonId,
+        chapterDraftId,
+      }),
+    );
+    await waitFor(() => {
+      expect(screen.queryByText('Beside the Old Market')).not.toBeInTheDocument();
+      expect(screen.queryByText('Preparing your review…')).not.toBeInTheDocument();
+    });
+    unmount();
+
+    let finishApproval:
+      ((result: Awaited<ReturnType<StoryKeeperClient['approveStoryItem']>>) => void) | undefined;
+    let finishRefresh: ((context: GetStoryContextResult) => void) | undefined;
+    let approvalResolved = false;
+    const approvalClient = createClient();
+    approvalClient.getStoryContext = vi.fn<StoryKeeperClient['getStoryContext']>(
+      ({ actorPersonId }) => {
+        if (actorPersonId === storyKeeperDemoIds.mayaPersonId) return Promise.resolve(mayaContext);
+        if (!approvalResolved) return Promise.resolve(reviewableChapterContext);
+        return new Promise((resolve) => {
+          finishRefresh = resolve;
+        });
+      },
+    );
+    approvalClient.approveStoryItem = vi.fn<StoryKeeperClient['approveStoryItem']>(
+      () =>
+        new Promise((resolve) => {
+          finishApproval = resolve;
+        }),
+    );
+    render(<SimulatorApp createClient={() => approvalClient} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    await screen.findByRole('heading', { name: 'Beside the Old Market' });
+    fireEvent.click(screen.getByRole('button', { name: 'Approve chapter' }));
+    approvalResolved = true;
+    finishApproval?.({
+      targetType: 'chapter',
+      targetId: chapterDraftId,
+      action: 'approve',
+      status: 'updated',
+      itemStatus: 'approved',
+    });
+    await waitFor(() => {
+      expect(finishRefresh).toBeTypeOf('function');
+    });
+    fireEvent.change(screen.getByLabelText('Inspect memory as'), { target: { value: 'maya' } });
+    await screen.findByRole('heading', { name: 'Ask Rosa a question' });
+    finishRefresh?.(approvedChapterContext);
+    await waitFor(() => {
+      expect(screen.queryByText('Chapter approved.')).not.toBeInTheDocument();
+      expect(screen.queryByText('Beside the Old Market')).not.toBeInTheDocument();
+      expect(screen.queryByText(/Approving/)).not.toBeInTheDocument();
     });
   });
 });

@@ -19,6 +19,10 @@ import {
   presentationReadInputSchema,
   queueFamilyQuestionInputSchema,
   queueFamilyQuestionResultSchema,
+  requestChapterDraftInputSchema,
+  requestChapterDraftResultSchema,
+  reviewChapterInputSchema,
+  reviewChapterResultSchema,
   resolveConflictInputSchema,
   resolveConflictResultSchema,
   saveAnswerInputSchema,
@@ -38,6 +42,10 @@ import {
   type ListPendingConflictsResult,
   type QueueFamilyQuestionInput,
   type QueueFamilyQuestionResult,
+  type RequestChapterDraftInput,
+  type RequestChapterDraftResult,
+  type ReviewChapterInput,
+  type ReviewChapterResult,
   type ResolveConflictInput,
   type ResolveConflictResult,
   type SaveAnswerInput,
@@ -76,6 +84,7 @@ export type StoryKeeperClientErrorCode =
   | 'story_item_state'
   | 'provenance'
   | 'identity'
+  | 'chapter_state'
   | 'interview_state'
   | 'unexpected';
 
@@ -102,6 +111,8 @@ export interface StoryKeeperClient {
   approveStoryItem(input: ApproveStoryItemInput): Promise<ApproveStoryItemResult>;
   deletePendingMemory(input: DeletePendingMemoryInput): Promise<DeletePendingMemoryResult>;
   queueFamilyQuestion(input: QueueFamilyQuestionInput): Promise<QueueFamilyQuestionResult>;
+  requestChapterDraft(input: RequestChapterDraftInput): Promise<RequestChapterDraftResult>;
+  reviewChapter(input: ReviewChapterInput): Promise<ReviewChapterResult>;
   getTimeline(input: PresentationReadInput): Promise<TimelineResponse>;
 }
 
@@ -231,6 +242,24 @@ export class StoryKeeperMcpClient implements StoryKeeperClient {
       'queue_family_question',
       queueFamilyQuestionInputSchema,
       queueFamilyQuestionResultSchema,
+      input,
+    );
+  }
+
+  public requestChapterDraft(input: RequestChapterDraftInput): Promise<RequestChapterDraftResult> {
+    return this.callValidatedTool(
+      'request_chapter_draft',
+      requestChapterDraftInputSchema,
+      requestChapterDraftResultSchema,
+      input,
+    );
+  }
+
+  public reviewChapter(input: ReviewChapterInput): Promise<ReviewChapterResult> {
+    return this.callValidatedTool(
+      'review_chapter',
+      reviewChapterInputSchema,
+      reviewChapterResultSchema,
       input,
     );
   }
@@ -369,6 +398,13 @@ function mapToolError(result: CallToolResult): StoryKeeperClientError {
       'conflict_state',
       'This conflict changed since it was loaded.',
     );
+  }
+  if (
+    serverCode === 'CHAPTER_STATE_CONFLICT' ||
+    serverCode === 'CHAPTER_SOURCE_NOT_ELIGIBLE' ||
+    serverCode === 'CHAPTER_NOT_FOUND'
+  ) {
+    return new StoryKeeperClientError('chapter_state', 'This chapter changed since it was loaded.');
   }
   if (serverCode === 'INVALID_CONFLICT_RESOLUTION') {
     return new StoryKeeperClientError(

@@ -5,6 +5,7 @@ import type {
   ApprovalTargetType,
   ApproximateDate,
   ChapterDraftStatus,
+  RecoverableChapterDraft,
   RelationshipType,
   StoryContextPersonIdentity,
   StoryItemStatus,
@@ -75,6 +76,7 @@ export interface StoryContextRecord {
   readonly relationships: readonly ContextRelationshipRecord[];
   readonly timelineEvents: readonly ContextTimelineEventRecord[];
   readonly chapters: readonly ContextChapterRecord[];
+  readonly recoverableChapterDrafts?: readonly RecoverableChapterDraft[];
 }
 
 export interface ContextChapterRecord {
@@ -529,6 +531,30 @@ export class DrizzlePrivacyRepository implements PrivacyRepository {
       )
       .orderBy(asc(chapterDrafts.createdAt), asc(chapterDrafts.id))
       .all();
+    const recoverableChapterDraftRows =
+      narratorPersonId === undefined
+        ? []
+        : this.database.db
+            .select({
+              chapterDraftId: chapterDrafts.id,
+              status: chapterDrafts.status,
+            })
+            .from(chapterDrafts)
+            .where(
+              and(
+                eq(chapterDrafts.familyId, familyId),
+                eq(chapterDrafts.narratorPersonId, narratorPersonId),
+                inArray(chapterDrafts.status, ['generating', 'pending_review', 'failed']),
+              ),
+            )
+            .orderBy(desc(chapterDrafts.createdAt), desc(chapterDrafts.id))
+            .all()
+            .flatMap(({ chapterDraftId, status }): readonly RecoverableChapterDraft[] => {
+              if (status !== 'generating' && status !== 'pending_review' && status !== 'failed') {
+                return [];
+              }
+              return [{ chapterDraftId, status }];
+            });
 
     const candidateRows =
       narratorPersonId === undefined
@@ -654,6 +680,9 @@ export class DrizzlePrivacyRepository implements PrivacyRepository {
               },
             ],
       ),
+      ...(recoverableChapterDraftRows.length === 0
+        ? {}
+        : { recoverableChapterDrafts: recoverableChapterDraftRows }),
     };
   }
 }

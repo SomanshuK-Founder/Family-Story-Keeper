@@ -7,6 +7,7 @@ import { AppShell } from '@story-keeper/ui';
 import { useEffect, useRef, useState, type SyntheticEvent } from 'react';
 
 import {
+  maximumChapterTopicLength,
   maximumFamilyQuestionLength,
   resolveMcpEndpoint,
   StoryKeeperClientError,
@@ -14,8 +15,14 @@ import {
   type GetNextQuestionResult,
   type GetStoryContextResult,
   type ListPendingConflictsResult,
+  type ReviewChapterResult,
   type StoryKeeperClient,
 } from '@story-keeper/mcp-client';
+import {
+  ChapterDraftPanel,
+  type ChapterNotice,
+  type ChapterUiStatus,
+} from './components/chapters/ChapterDraftPanel.js';
 import {
   FamilyQuestionComposer,
   type FamilyQuestionNotice,
@@ -45,6 +52,10 @@ import {
   type MemoryProcessingPhase,
   type MemoryProcessingTiming,
 } from './features/memory/processing.js';
+import {
+  defaultChapterPollingTiming,
+  type ChapterPollingTiming,
+} from './features/chapter/polling.js';
 
 type ConnectionStatus = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'error';
 type RequestStatus = 'idle' | 'starting' | 'saving';
@@ -52,11 +63,13 @@ type RequestStatus = 'idle' | 'starting' | 'saving';
 interface SimulatorAppProps {
   readonly createClient?: () => StoryKeeperClient;
   readonly processingTiming?: MemoryProcessingTiming;
+  readonly chapterPollingTiming?: ChapterPollingTiming;
 }
 
 export function SimulatorApp({
   createClient = createDefaultClient,
   processingTiming = defaultMemoryProcessingTiming,
+  chapterPollingTiming = defaultChapterPollingTiming,
 }: SimulatorAppProps) {
   const clientRef = useRef<StoryKeeperClient | null>(null);
   if (clientRef.current === null) clientRef.current = createClient();
@@ -106,6 +119,15 @@ export function SimulatorApp({
   const [memoryMutationNotice, setMemoryMutationNotice] = useState<MemoryMutationNotice | null>(
     null,
   );
+  const [chapterTopic, setChapterTopic] = useState('');
+  const [chapterStatus, setChapterStatus] = useState<ChapterUiStatus>('idle');
+  const [chapterReview, setChapterReview] = useState<ReviewChapterResult | null>(null);
+  const [chapterValidation, setChapterValidation] = useState<string | null>(null);
+  const [chapterNotice, setChapterNotice] = useState<ChapterNotice | null>(null);
+  const [confirmChapterReject, setConfirmChapterReject] = useState(false);
+  const chapterFlowRef = useRef(0);
+  const chapterMutationRef = useRef(0);
+  const chapterAbortRef = useRef<AbortController | null>(null);
 
   useEffect(
     () => () => {
@@ -114,6 +136,9 @@ export function SimulatorApp({
       familyQuestionMutationRef.current += 1;
       conflictMutationRef.current += 1;
       memoryMutationRef.current += 1;
+      chapterFlowRef.current += 1;
+      chapterMutationRef.current += 1;
+      chapterAbortRef.current?.abort();
       processingRunRef.current += 1;
       processingAbortRef.current?.abort();
       void client.disconnect();
@@ -128,6 +153,7 @@ export function SimulatorApp({
     cancelMemoryMutation();
     cancelInterviewRequest(false);
     cancelFamilyQuestionMutation(true);
+    cancelChapterWork(true);
     inspectorRequestRef.current += 1;
     setStoryContext(null);
     setConflicts(null);
@@ -399,6 +425,329 @@ export function SimulatorApp({
     }
   }
 
+  function stopChapterPolling(): void {
+    chapterFlowRef.current += 1;
+    chapterAbortRef.current?.abort();
+    chapterAbortRef.current = null;
+  }
+
+  function cancelChapterWork(clearPrivateState: boolean): void {
+    stopChapterPolling();
+    chapterMutationRef.current += 1;
+    setConfirmChapterReject(false);
+    setChapterValidation(null);
+    setChapterNotice(null);
+    if (clearPrivateState) {
+      setChapterTopic('');
+      setChapterStatus('idle');
+      setChapterReview(null);
+    }
+  }
+
+  function synchronizeChapterContext(context: GetStoryContextResult): void {
+    stopChapterPolling();
+    setConfirmChapterReject(false);
+    setChapterReview(null);
+
+    if (context.actor.role !== 'narrator') {
+      setChapterStatus('idle');
+      return;
+    }
+
+    const activeDraft = context.recoverableChapterDrafts?.[0];
+    if (activeDraft === undefined) {
+      setChapterStatus('idle');
+      return;
+    }
+    if (activeDraft.status === 'failed') {
+      setChapterStatus('failed');
+      return;
+    }
+
+    const runId = chapterFlowRef.current;
+    if (activeDraft.status === 'pending_review') {
+      setChapterStatus('loading_review');
+      void loadChapterReview(activeDraft.chapterDraftId, runId);
+      return;
+    }
+
+    const controller = new AbortController();
+    chapterAbortRef.current = controller;
+    setChapterStatus('generating');
+    void pollChapterContext(runId, controller);
+  }
+
+  async function loadChapterReview(chapterDraftId: string, runId: number): Promise<void> {
+    try {
+      const review = await client.reviewChapter({
+        familyId: storyKeeperDemoIds.familyId,
+        actorPersonId: storyKeeperDemoIds.rosaPersonId,
+        chapterDraftId,
+      });
+      if (chapterFlowRef.current !== runId) return;
+      if (review.status !== 'pending_review' || review.title === null || review.body === null) {
+        setChapterStatus(review.status === 'failed' ? 'failed' : 'delayed');
+        setChapterReview(null);
+        if (review.status !== 'failed') {
+          setChapterNotice({
+            kind: 'error',
+            message: 'The latest chapter review state could not be confirmed. Check again later.',
+          });
+        }
+        return;
+      }
+      setChapterReview(review);
+      setChapterStatus('pending_review');
+    } catch (caught: unknown) {
+      if (chapterFlowRef.current !== runId) return;
+      setChapterStatus('delayed');
+      setChapterNotice({ kind: 'error', message: chapterErrorMessage(caught) });
+    }
+  }
+
+  async function pollChapterContext(runId: number, controller: AbortController): Promise<void> {
+    for (let attempt = 0; attempt < chapterPollingTiming.maxAttempts; attempt += 1) {
+      const shouldContinue = await waitForProcessingInterval(
+        chapterPollingTiming.pollIntervalMs,
+        controller.signal,
+      );
+      if (!shouldContinue || chapterFlowRef.current !== runId) return;
+
+      try {
+        const context = await client.getStoryContext({
+          familyId: storyKeeperDemoIds.familyId,
+          actorPersonId: storyKeeperDemoIds.rosaPersonId,
+        });
+        if (controller.signal.aborted || chapterFlowRef.current !== runId) return;
+        setStoryContext(context);
+        setInspectorStatus('ready');
+        setInspectorError(null);
+        const activeDraft = context.recoverableChapterDrafts?.[0];
+        if (activeDraft === undefined) {
+          setChapterReview(null);
+          setChapterStatus('idle');
+          return;
+        }
+        if (activeDraft.status === 'failed') {
+          setChapterReview(null);
+          setChapterStatus('failed');
+          return;
+        }
+        if (activeDraft.status === 'pending_review') {
+          setChapterStatus('loading_review');
+          await loadChapterReview(activeDraft.chapterDraftId, runId);
+          return;
+        }
+      } catch {
+        if (controller.signal.aborted || chapterFlowRef.current !== runId) return;
+        setChapterStatus('delayed');
+        setChapterNotice({
+          kind: 'error',
+          message: 'The chapter status could not be checked. Reconnect or check again later.',
+        });
+        return;
+      }
+    }
+
+    if (!controller.signal.aborted && chapterFlowRef.current === runId) {
+      setChapterStatus('delayed');
+    }
+  }
+
+  async function refreshChapterContext(): Promise<void> {
+    if (inspectorActor !== 'rosa' || connectionStatus !== 'connected') return;
+    const flowId = chapterFlowRef.current + 1;
+    stopChapterPolling();
+    chapterFlowRef.current = flowId;
+    setChapterStatus('loading_review');
+    setChapterNotice(null);
+    try {
+      const context = await client.getStoryContext({
+        familyId: storyKeeperDemoIds.familyId,
+        actorPersonId: storyKeeperDemoIds.rosaPersonId,
+      });
+      if (chapterFlowRef.current !== flowId) return;
+      setStoryContext(context);
+      synchronizeChapterContext(context);
+    } catch (caught: unknown) {
+      if (chapterFlowRef.current !== flowId) return;
+      setChapterStatus('delayed');
+      setChapterNotice({ kind: 'error', message: chapterErrorMessage(caught) });
+    }
+  }
+
+  async function requestChapter(): Promise<void> {
+    if (chapterStatus === 'requesting' || connectionStatus !== 'connected') return;
+    const topic = chapterTopic.trim();
+    if (topic.length === 0 || topic.length > maximumChapterTopicLength) {
+      setChapterValidation('Enter a chapter topic between 1 and 200 characters.');
+      return;
+    }
+    if (inspectorActor !== 'rosa' || storyContext?.actor.role !== 'narrator') {
+      setChapterNotice({
+        kind: 'error',
+        message: 'Switch to the active narrator view before requesting a chapter.',
+      });
+      return;
+    }
+
+    stopChapterPolling();
+    const mutationId = chapterMutationRef.current + 1;
+    chapterMutationRef.current = mutationId;
+    setChapterStatus('requesting');
+    setChapterValidation(null);
+    setChapterNotice(null);
+    setChapterReview(null);
+    try {
+      const result = await client.requestChapterDraft({
+        familyId: storyKeeperDemoIds.familyId,
+        actorPersonId: storyContext.actor.id,
+        narratorPersonId: storyContext.actor.id,
+        chapterTopic: topic,
+      });
+      if (chapterMutationRef.current !== mutationId) return;
+      if (result.status === 'insufficient_sources') {
+        setChapterStatus('idle');
+        setChapterNotice({
+          kind: 'error',
+          message: 'There isn’t enough approved story material to create a chapter yet.',
+        });
+        return;
+      }
+
+      setChapterTopic('');
+      setChapterStatus('generating');
+      setChapterNotice({
+        kind: 'success',
+        message: 'Chapter request accepted. Story Keeper is drafting it for review.',
+      });
+    } catch (caught: unknown) {
+      if (chapterMutationRef.current !== mutationId) return;
+      setChapterStatus('idle');
+      setChapterNotice({ kind: 'error', message: chapterRequestErrorMessage(caught) });
+      return;
+    }
+
+    try {
+      const context = await client.getStoryContext({
+        familyId: storyKeeperDemoIds.familyId,
+        actorPersonId: storyKeeperDemoIds.rosaPersonId,
+      });
+      if (chapterMutationRef.current !== mutationId) return;
+      setStoryContext(context);
+      synchronizeChapterContext(context);
+    } catch {
+      if (chapterMutationRef.current !== mutationId) return;
+      setChapterStatus('delayed');
+      setChapterNotice({
+        kind: 'error',
+        message:
+          'The chapter request was accepted, but its latest status could not be loaded. Reconnect to continue.',
+      });
+    }
+  }
+
+  async function mutateChapter(action: 'approve' | 'reject'): Promise<void> {
+    if (
+      inspectorActor !== 'rosa' ||
+      connectionStatus !== 'connected' ||
+      chapterReview?.status !== 'pending_review'
+    ) {
+      setChapterNotice({
+        kind: 'error',
+        message: 'Refresh the narrator’s chapter review before continuing.',
+      });
+      return;
+    }
+
+    stopChapterPolling();
+    const mutationId = chapterMutationRef.current + 1;
+    chapterMutationRef.current = mutationId;
+    const chapterDraftId = chapterReview.chapterDraftId;
+    setConfirmChapterReject(false);
+    setChapterStatus(action === 'approve' ? 'approving' : 'rejecting');
+    setChapterNotice(null);
+    let result: Awaited<ReturnType<StoryKeeperClient['approveStoryItem']>>;
+    try {
+      result = await client.approveStoryItem({
+        familyId: storyKeeperDemoIds.familyId,
+        actorPersonId: storyKeeperDemoIds.rosaPersonId,
+        targetType: 'chapter',
+        targetId: chapterDraftId,
+        action,
+      });
+      if (chapterMutationRef.current !== mutationId) return;
+    } catch (caught: unknown) {
+      if (chapterMutationRef.current !== mutationId) return;
+      if (
+        caught instanceof StoryKeeperClientError &&
+        (caught.code === 'story_item_state' ||
+          caught.code === 'chapter_state' ||
+          caught.code === 'unavailable')
+      ) {
+        try {
+          const context = await client.getStoryContext({
+            familyId: storyKeeperDemoIds.familyId,
+            actorPersonId: storyKeeperDemoIds.rosaPersonId,
+          });
+          if (chapterMutationRef.current !== mutationId) return;
+          setStoryContext(context);
+          synchronizeChapterContext(context);
+          setChapterNotice({
+            kind: 'error',
+            message:
+              caught.code === 'unavailable'
+                ? 'The connection was interrupted, so Story Keeper refreshed the latest chapter state.'
+                : 'This chapter changed since you opened it. We refreshed the latest state.',
+          });
+        } catch {
+          if (chapterMutationRef.current !== mutationId) return;
+          setChapterStatus('delayed');
+          setChapterReview(null);
+          setChapterNotice({
+            kind: 'error',
+            message:
+              caught.code === 'unavailable'
+                ? 'The connection was interrupted and the latest chapter state could not be confirmed. Reconnect before continuing.'
+                : 'This chapter changed, but the latest state could not be refreshed. Reconnect before continuing.',
+          });
+        }
+      } else {
+        setChapterStatus('pending_review');
+        setChapterNotice({ kind: 'error', message: chapterMutationErrorMessage(caught) });
+      }
+      return;
+    }
+
+    try {
+      const context = await client.getStoryContext({
+        familyId: storyKeeperDemoIds.familyId,
+        actorPersonId: storyKeeperDemoIds.rosaPersonId,
+      });
+      if (chapterMutationRef.current !== mutationId) return;
+      setStoryContext(context);
+      synchronizeChapterContext(context);
+      setChapterNotice({
+        kind: 'success',
+        message:
+          result.status === 'already_applied'
+            ? `This chapter was already ${action === 'approve' ? 'approved' : 'rejected'}. Story Keeper refreshed the latest state.`
+            : action === 'approve'
+              ? 'Chapter approved. Story Keeper refreshed the latest family story.'
+              : 'Chapter rejected. It will not appear in family-visible story views.',
+      });
+    } catch {
+      if (chapterMutationRef.current !== mutationId) return;
+      setChapterStatus('delayed');
+      setChapterReview(null);
+      setChapterNotice({
+        kind: 'error',
+        message:
+          'Your chapter choice was saved, but the latest story state could not be loaded. Reconnect before continuing.',
+      });
+    }
+  }
+
   async function mutateMemory(
     targetType: ActiveMemoryMutation['targetType'],
     targetId: string,
@@ -564,6 +913,7 @@ export function SimulatorApp({
       setStoryContext(nextContext);
       setConflicts(nextConflicts.conflicts);
       setInspectorStatus('ready');
+      synchronizeChapterContext(nextContext);
       return true;
     } catch (caught: unknown) {
       if (inspectorRequestRef.current !== requestId) return false;
@@ -583,6 +933,7 @@ export function SimulatorApp({
     cancelMemoryMutation();
     cancelInterviewRequest(true);
     cancelFamilyQuestionMutation(true);
+    cancelChapterWork(true);
     setInspectorActor(actor);
     setNotice(
       actor === 'rosa'
@@ -757,6 +1108,34 @@ export function SimulatorApp({
       </div>
 
       {inspectorActor === 'rosa' ? (
+        <ChapterDraftPanel
+          narratorName={storyContext?.actor.displayName ?? 'the narrator'}
+          connected={isConnected && storyContext?.actor.role === 'narrator'}
+          topic={chapterTopic}
+          status={chapterStatus}
+          review={chapterReview}
+          validationMessage={chapterValidation}
+          notice={chapterNotice}
+          confirmReject={confirmChapterReject}
+          onTopicChange={(topic) => {
+            setChapterTopic(topic);
+            setChapterValidation(null);
+            setChapterNotice(null);
+          }}
+          onRequest={() => void requestChapter()}
+          onCheckStatus={() => void refreshChapterContext()}
+          onApprove={() => void mutateChapter('approve')}
+          onOpenReject={() => {
+            setConfirmChapterReject(true);
+          }}
+          onCancelReject={() => {
+            setConfirmChapterReject(false);
+          }}
+          onConfirmReject={() => void mutateChapter('reject')}
+        />
+      ) : null}
+
+      {inspectorActor === 'rosa' ? (
         <>
           <ConflictReviewList
             conflicts={conflicts}
@@ -896,4 +1275,40 @@ function familyQuestionErrorMessage(caught: unknown): string {
     return 'The connection was interrupted. Your question was not confirmed as added.';
   }
   return 'Story Keeper could not add this question. Try again.';
+}
+
+function chapterRequestErrorMessage(caught: unknown): string {
+  if (!(caught instanceof StoryKeeperClientError)) {
+    return 'Story Keeper could not request this chapter. No chapter was created here.';
+  }
+  if (caught.code === 'validation') {
+    return 'Enter a chapter topic between 1 and 200 characters.';
+  }
+  if (caught.code === 'authorization') {
+    return 'Only the active narrator can request this chapter.';
+  }
+  if (caught.code === 'unavailable') {
+    return 'The connection was interrupted. Reconnect to check whether a draft was created.';
+  }
+  return 'Story Keeper could not request this chapter. No chapter was created here.';
+}
+
+function chapterErrorMessage(caught: unknown): string {
+  if (caught instanceof StoryKeeperClientError && caught.code === 'authorization') {
+    return 'Only the active narrator can review this chapter.';
+  }
+  if (caught instanceof StoryKeeperClientError && caught.code === 'unavailable') {
+    return 'The connection was interrupted while loading the chapter. Check again later.';
+  }
+  return 'The chapter review could not be loaded. Check again later.';
+}
+
+function chapterMutationErrorMessage(caught: unknown): string {
+  if (caught instanceof StoryKeeperClientError && caught.code === 'authorization') {
+    return 'Only the active narrator can approve or reject this chapter.';
+  }
+  if (caught instanceof StoryKeeperClientError && caught.code === 'unavailable') {
+    return 'The connection was interrupted. Refresh the chapter before trying again.';
+  }
+  return 'Story Keeper could not change this chapter. No chapter state was changed here.';
 }

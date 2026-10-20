@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { defineConfig } from '@playwright/test';
 
 const workspaceRoot = resolve(import.meta.dirname, '../..');
-const databasePath = resolve(workspaceRoot, 'output/playwright/person-b-phase-7.sqlite');
+const databasePath = resolve(workspaceRoot, 'output/playwright/person-b-phase-8.sqlite');
 
 export default defineConfig({
   testDir: './e2e',

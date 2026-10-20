@@ -296,6 +296,110 @@ test('Rosa and Maya use the real memory and family-question lifecycle safely', a
   await expect(page.locator('.current-question')).not.toHaveText(surfacedFamilyQuestion);
   await expect(page.getByText('No memories need conflict review right now.')).toBeVisible();
 
+  const chapterTopic = 'Rosa’s early years beside the old market';
+  const chapterBody =
+    'Rosa remembered the private garden beside the old market, where the evening gate moved in the breeze.';
+  const chapterStudio = page.getByRole('region', { name: 'Create a chapter' });
+  await expect(chapterStudio).toBeVisible();
+  await chapterStudio.getByLabel('What should this chapter focus on?').fill(chapterTopic);
+  await chapterStudio.getByRole('button', { name: 'Generate chapter' }).focus();
+  await page.keyboard.press('Enter');
+  await expect(chapterStudio.getByText('Chapter request accepted.')).toBeVisible();
+  await expect(chapterStudio.getByText('Generating', { exact: true })).toBeVisible();
+
+  await page.reload();
+  await page.getByRole('button', { name: 'Connect' }).focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByText('15 tools verified')).toBeVisible();
+  const recoveredChapterStudio = page.getByRole('region', { name: 'Create a chapter' });
+  await expect(
+    recoveredChapterStudio.getByRole('heading', { name: 'Beside the Old Market' }),
+  ).toBeVisible();
+  await expect(recoveredChapterStudio.getByText(chapterBody)).toBeVisible();
+  await recoveredChapterStudio.getByText('Supported by 2 approved sources').click();
+  await expect(
+    recoveredChapterStudio.getByText(/garden sound: The garden gate in the evening breeze/i),
+  ).toBeVisible();
+  await expect(recoveredChapterStudio.getByText(/Moved near the old market/)).toBeVisible();
+  await expect(recoveredChapterStudio.getByText(/00000000-/)).toHaveCount(0);
+
+  await page.screenshot({ path: testInfo.outputPath('phase-8-review-820.png'), fullPage: true });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  await page.setViewportSize({ width: 1440, height: 900 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  await page.screenshot({ path: testInfo.outputPath('phase-8-review-1440.png'), fullPage: true });
+  await page.setViewportSize({ width: 820, height: 900 });
+
+  const chapterPersistence = await page.evaluate(
+    async ({ topic, body }) => ({
+      local: JSON.stringify(window.localStorage),
+      session: JSON.stringify(window.sessionStorage),
+      indexedDbNames: await window.indexedDB
+        .databases()
+        .then((databases) => databases.flatMap(({ name }) => (name === undefined ? [] : [name]))),
+      url: window.location.href,
+      topic,
+      body,
+    }),
+    { topic: chapterTopic, body: chapterBody },
+  );
+  expect(chapterPersistence.local).not.toContain(chapterTopic);
+  expect(chapterPersistence.local).not.toContain(chapterBody);
+  expect(chapterPersistence.session).not.toContain(chapterTopic);
+  expect(chapterPersistence.session).not.toContain(chapterBody);
+  expect(chapterPersistence.indexedDbNames).toEqual([]);
+  expect(chapterPersistence.url).not.toContain(encodeURIComponent(chapterTopic));
+
+  await recoveredChapterStudio.getByRole('button', { name: 'Approve chapter' }).focus();
+  await page.keyboard.press('Enter');
+  await expect(
+    recoveredChapterStudio.getByText(
+      'Chapter approved. Story Keeper refreshed the latest family story.',
+    ),
+  ).toBeVisible();
+  const rosaFamilyStory = page.getByRole('region', { name: 'Review story memories' });
+  await expect(
+    rosaFamilyStory.getByRole('heading', { name: 'Beside the Old Market' }),
+  ).toBeVisible();
+  await expect(rosaFamilyStory.getByText(chapterBody)).toBeVisible();
+
+  await page.getByLabel('Inspect memory as').selectOption('maya');
+  await expect(page.getByText('Viewing Maya’s approved family memory.')).toBeVisible();
+  const mayaApprovedStory = page.getByRole('region', { name: 'Approved family memories' });
+  await expect(
+    mayaApprovedStory.getByRole('heading', { name: 'Beside the Old Market' }),
+  ).toBeVisible();
+  await expect(mayaApprovedStory.getByText(chapterBody)).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Create a chapter' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /Approve chapter|Reject chapter/ })).toHaveCount(0);
+
+  await page.reload();
+  await page.getByRole('button', { name: 'Connect' }).click();
+  await expect(page.getByText('15 tools verified')).toBeVisible();
+  await page.getByLabel('Inspect memory as').selectOption('maya');
+  const reloadedMayaStory = page.getByRole('region', { name: 'Approved family memories' });
+  await expect(
+    reloadedMayaStory.getByRole('heading', { name: 'Beside the Old Market' }),
+  ).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Create a chapter' })).toHaveCount(0);
+
+  await page.getByLabel('Inspect memory as').selectOption('rosa');
+  const failureTopic = 'A chapter that cannot be generated';
+  const failureStudio = page.getByRole('region', { name: 'Create a chapter' });
+  await failureStudio.getByLabel('What should this chapter focus on?').fill(failureTopic);
+  await failureStudio.getByRole('button', { name: 'Generate chapter' }).click();
+  await expect(
+    failureStudio.getByRole('heading', { name: 'This chapter couldn’t be generated' }),
+  ).toBeVisible();
+  await expect(failureStudio.getByText(/Private provider details remain hidden/)).toBeVisible();
+  await expect(
+    failureStudio.getByText(/INVALID_CHAPTER_OUTPUT|ZodError|draft_chapter|retry count|worker/i),
+  ).toHaveCount(0);
+
   await page.setViewportSize({ width: 1440, height: 900 });
   await expect(page.getByRole('heading', { name: 'Needs clarification' })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
@@ -314,5 +418,8 @@ test('Rosa and Maya use the real memory and family-question lifecycle safely', a
   expect(consoleMessages.join('\n')).not.toContain(rawAnswer);
   expect(consoleMessages.join('\n')).not.toContain(queuedQuestionText);
   expect(consoleMessages.join('\n')).not.toContain(privateDraft);
+  expect(consoleMessages.join('\n')).not.toContain(chapterTopic);
+  expect(consoleMessages.join('\n')).not.toContain(chapterBody);
+  expect(consoleMessages.join('\n')).not.toContain(failureTopic);
   expect(consoleErrors).toEqual([]);
 });

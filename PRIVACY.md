@@ -60,6 +60,12 @@ Phase 7 chapter drafts remain narrator-private while generating, pending review,
 or superseded. An explicitly approved chapter becomes family-visible to relatives and children.
 Chapter review and family context expose structured source labels only and never raw source answers.
 
+For private reload recovery, narrator-scoped story context may include only the owning active
+narrator's recoverable chapter draft ID and status (`generating`, `pending_review`, or `failed`).
+This discovery metadata is omitted from relative and child context and excludes chapter text,
+topics, sources, provider output, job details, rejected/superseded drafts, and approved chapters.
+Approved chapters continue to use the approved-family chapter surfaces.
+
 Do not overbuild enterprise permissions.
 
 ## Approval

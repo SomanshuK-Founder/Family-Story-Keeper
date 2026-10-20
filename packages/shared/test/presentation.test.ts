@@ -4,6 +4,7 @@ import {
   approvedChaptersResponseSchema,
   familyGraphResponseSchema,
   presentationReadInputSchema,
+  recoverableChapterDraftSchema,
   storyContextPersonIdentitySchema,
   timelineResponseSchema,
 } from '@story-keeper/shared';
@@ -92,6 +93,26 @@ describe('Phase 8 presentation contracts', () => {
         extractedDisplayName: 'Raj',
         possibleMatchDisplayName: 'Raj Sharma',
         matchScore: 1,
+      }),
+    ).toThrow();
+  });
+
+  it('limits private chapter recovery metadata to the opaque draft ID and recoverable status', () => {
+    const chapterDraftId = randomUUID();
+    expect(
+      recoverableChapterDraftSchema.parse({ chapterDraftId, status: 'pending_review' }),
+    ).toEqual({ chapterDraftId, status: 'pending_review' });
+    expect(() =>
+      recoverableChapterDraftSchema.parse({
+        chapterDraftId,
+        status: 'approved',
+      }),
+    ).toThrow();
+    expect(() =>
+      recoverableChapterDraftSchema.parse({
+        chapterDraftId,
+        status: 'failed',
+        chapterTopic: 'Private topic',
       }),
     ).toThrow();
   });

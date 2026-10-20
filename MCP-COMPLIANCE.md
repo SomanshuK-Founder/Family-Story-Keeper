@@ -88,6 +88,12 @@ The additive `personIdentities` read field provides only identities relevant to 
 
 It does not expose candidate row IDs, match scores, raw answers, or identity-resolution actions.
 
+The additive optional `recoverableChapterDrafts` field is returned only when an active narrator has
+owned drafts in `generating`, `pending_review`, or `failed` state. Each entry contains only the
+opaque chapter draft ID and status, ordered newest first with a stable ID tie-breaker. It supports
+reload/reconnect recovery before calling `review_chapter`; relative and child responses omit it.
+Approved chapters remain on the existing approved-family read surfaces.
+
 ### `queue_family_question`
 Persist a question from one relative to another narrator.
 

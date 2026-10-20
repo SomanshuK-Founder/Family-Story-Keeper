@@ -34,10 +34,11 @@ export function PendingMemoryList({
   const facts = context?.facts ?? [];
   const relationships = context?.relationships ?? [];
   const events = context?.timelineEvents ?? [];
+  const chapters = context?.chapters ?? [];
   const identities = context?.personIdentities ?? [];
   const identityByPersonId = new Map(identities.map((identity) => [identity.personId, identity]));
   const unresolvedCount = identities.filter((identity) => identity.status === 'unresolved').length;
-  const itemCount = facts.length + relationships.length + events.length;
+  const itemCount = facts.length + relationships.length + events.length + chapters.length;
   const pendingCount = [...facts, ...relationships, ...events].filter(
     (item) => item.status === 'pending',
   ).length;
@@ -113,6 +114,19 @@ export function PendingMemoryList({
               activeMutation={activeMutation}
               onMutate={onMutate}
             />
+          ))}
+          {chapters.map((chapter) => (
+            <article className="memory-card approved-chapter-card" key={chapter.id}>
+              <p className="memory-state" data-status="approved">
+                Approved chapter
+              </p>
+              <h3>{chapter.title}</h3>
+              <p className="approved-chapter-body">{chapter.body}</p>
+              <small>
+                Supported by {chapter.sourceCount.toLocaleString()}{' '}
+                {chapter.sourceCount === 1 ? 'approved source' : 'approved sources'}
+              </small>
+            </article>
           ))}
         </div>
       ) : null}

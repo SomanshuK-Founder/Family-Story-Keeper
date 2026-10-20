@@ -12,6 +12,7 @@ import { PrivacyRepositoryError } from '@story-keeper/database';
 import type {
   ApprovalAction,
   ApprovalTargetType,
+  RecoverableChapterDraft,
   StoryContextPersonIdentity,
   StoryItemTargetType,
 } from '@story-keeper/shared';
@@ -36,6 +37,7 @@ export interface GetStoryContextResult {
   readonly relationships: readonly ContextRelationshipRecord[];
   readonly timelineEvents: readonly ContextTimelineEventRecord[];
   readonly chapters: readonly ContextChapterRecord[];
+  readonly recoverableChapterDrafts?: readonly RecoverableChapterDraft[];
   readonly conflicts: readonly StoryContextConflict[];
 }
 

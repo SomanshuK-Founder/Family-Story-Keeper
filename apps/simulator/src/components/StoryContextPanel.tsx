@@ -11,7 +11,8 @@ export function StoryContextPanel({ context }: StoryContextPanelProps) {
     identities.length +
     context.facts.length +
     context.relationships.length +
-    context.timelineEvents.length;
+    context.timelineEvents.length +
+    context.chapters.length;
   if (itemCount === 0) {
     return (
       <p className="developer-empty">
@@ -62,6 +63,17 @@ export function StoryContextPanel({ context }: StoryContextPanelProps) {
             <strong>{event.title}</strong> · {formatStoryDate(event.date)}
             <p>{event.description}</p>
             <ItemMeta status={event.status} sourceCount={event.sourceCount} />
+          </li>
+        ))}
+      </ContextSection>
+      <ContextSection title="Approved chapters" empty={context.chapters.length === 0}>
+        {context.chapters.map((chapter) => (
+          <li key={chapter.id}>
+            <strong>{chapter.title}</strong>
+            <p>{chapter.body}</p>
+            <small>
+              Approved · {chapter.sourceCount} {chapter.sourceCount === 1 ? 'source' : 'sources'}
+            </small>
           </li>
         ))}
       </ContextSection>

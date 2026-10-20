@@ -2,6 +2,7 @@ import { rmSync } from 'node:fs';
 
 import {
   createDatabase,
+  DrizzleChapterRepository,
   DrizzleExtractionRepository,
   DrizzleFamilyQuestionRepository,
   DrizzleInterviewRepository,
@@ -13,16 +14,21 @@ import {
   schema,
   seedDemoShowcaseData,
 } from '../../../packages/database/src/index.js';
-import { MockStoryExtractionProvider } from '../../../packages/bedrock/src/index.js';
 import {
+  MockStoryExtractionProvider,
+  type ChapterGenerationProvider,
+} from '../../../packages/bedrock/src/index.js';
+import {
+  ChapterWorker,
   ExtractionWorker,
   FamilyQuestionService,
   InterviewService,
   NarratorMemoryService,
   PrivacyService,
   startExtractionWorkerLoop,
+  startChapterWorkerLoop,
 } from '../../../packages/story-engine/src/index.js';
-import { storyKeeperDemoIds } from '../../../packages/shared/src/index.js';
+import { storyKeeperDemoIds, type ChapterGeneration } from '../../../packages/shared/src/index.js';
 
 const databasePath = process.env.DATABASE_PATH;
 if (databasePath === undefined) throw new Error('DATABASE_PATH is required for browser tests.');
@@ -194,8 +200,34 @@ const processingLoop = startExtractionWorkerLoop(
   { pollIntervalMs: 500, lockTimeoutMs: 60_000 },
 );
 
+const chapterRepository = new DrizzleChapterRepository(processingDatabase);
+const chapterProvider: ChapterGenerationProvider = {
+  generate: (request) => {
+    if (request.topic === 'A chapter that cannot be generated') {
+      return Promise.resolve({
+        title: '',
+        body: '',
+        usedSources: [],
+      } as unknown as ChapterGeneration);
+    }
+    return Promise.resolve({
+      title: 'Beside the Old Market',
+      body: 'Rosa remembered the private garden beside the old market, where the evening gate moved in the breeze.',
+      usedSources: request.sources.slice(0, 2).map(({ type, id }) => ({ type, id })),
+    });
+  },
+};
+const chapterLoop = startChapterWorkerLoop(
+  new ChapterWorker(processingJobs, chapterRepository, chapterProvider, {
+    workerId: 'phase-8-browser-chapter',
+    retryDelayMs: 0,
+  }),
+  processingJobs,
+  { pollIntervalMs: 500, lockTimeoutMs: 60_000 },
+);
+
 async function stopProcessingHarness(): Promise<void> {
-  await processingLoop.stop();
+  await Promise.all([processingLoop.stop(), chapterLoop.stop()]);
   processingDatabase.close();
 }
 

@@ -301,6 +301,10 @@ describe('Phase 7 grounded chapter pipeline', () => {
     const sources = createApprovedSources();
     const requested = requestDraft();
     if (requested.status !== 'queued') throw new Error('Expected queued chapter.');
+    expect(
+      privacy.getStoryContext(demoSeedIds.familyId, demoSeedIds.rosaPersonId)
+        .recoverableChapterDrafts,
+    ).toEqual([{ chapterDraftId: requested.chapterDraftId, status: 'generating' }]);
     const provider = new MockChapterGenerationProvider({
       title: 'Rosa’s Early Years',
       body: 'Rosa remembered Delhi and a move around 1962 to 1964.',
@@ -322,6 +326,10 @@ describe('Phase 7 grounded chapter pipeline', () => {
       status: 'pending_review',
       title: 'Rosa’s Early Years',
     });
+    expect(
+      privacy.getStoryContext(demoSeedIds.familyId, demoSeedIds.rosaPersonId)
+        .recoverableChapterDrafts,
+    ).toEqual([{ chapterDraftId: requested.chapterDraftId, status: 'pending_review' }]);
     expect(review.sources).toEqual([
       expect.objectContaining({ type: 'fact', sourceId: sources.factId }),
       expect.objectContaining({ type: 'timeline_event', sourceId: sources.eventId }),
@@ -356,6 +364,67 @@ describe('Phase 7 grounded chapter pipeline', () => {
       status: 'failed',
       lastErrorCode: 'CHAPTER_SOURCE_NOT_ELIGIBLE',
     });
+    expect(
+      privacy.getStoryContext(demoSeedIds.familyId, demoSeedIds.rosaPersonId)
+        .recoverableChapterDrafts,
+    ).toEqual([{ chapterDraftId: requested.chapterDraftId, status: 'failed' }]);
+  });
+
+  it('fails publication atomically when a claimed source becomes ineligible', async () => {
+    const sources = createApprovedSources();
+    const requested = requestDraft();
+    if (requested.status !== 'queued') throw new Error('Expected queued chapter.');
+    let providerObservedClaimedJob = false;
+    const provider: ChapterGenerationProvider = {
+      generate: (request) => {
+        providerObservedClaimedJob = true;
+        expect(jobs.findById(requested.jobId)).toMatchObject({
+          status: 'running',
+          lockedBy: 'chapter-worker',
+        });
+        expect(request.sources.map(({ type, id }) => ({ type, id }))).toContainEqual({
+          type: 'fact',
+          id: sources.factId,
+        });
+        privacy.approveStoryItem(
+          demoSeedIds.familyId,
+          demoSeedIds.rosaPersonId,
+          'fact',
+          sources.factId,
+          'revoke',
+        );
+        return Promise.resolve({
+          title: 'Must not be published',
+          body: 'This body cites a source that became ineligible after the job was claimed.',
+          usedSources: [
+            { type: 'fact', id: sources.factId },
+            { type: 'timeline_event', id: sources.eventId },
+          ],
+        });
+      },
+    };
+
+    expect(await createWorker(provider).processNext()).toBe('failed');
+    expect(providerObservedClaimedJob).toBe(true);
+    expect(jobs.findById(requested.jobId)).toMatchObject({
+      status: 'failed',
+      lastErrorCode: 'CHAPTER_SOURCE_NOT_ELIGIBLE',
+    });
+    expect(
+      database.db
+        .select()
+        .from(schema.chapterDrafts)
+        .all()
+        .find(({ id }) => id === requested.chapterDraftId),
+    ).toMatchObject({ status: 'failed', title: null, body: null });
+    expect(database.db.select().from(schema.chapterSources).all()).toEqual([]);
+    expect(
+      chapterService.reviewChapter(
+        demoSeedIds.familyId,
+        demoSeedIds.rosaPersonId,
+        requested.chapterDraftId,
+      ),
+    ).toMatchObject({ status: 'failed', title: null, body: null, sources: [] });
   });
 
   it('fails schema-invalid provider output without publishing partial chapter state', async () => {
@@ -380,6 +449,35 @@ describe('Phase 7 grounded chapter pipeline', () => {
       status: 'failed',
       lastErrorCode: 'INVALID_CHAPTER_OUTPUT',
     });
+  });
+
+  it('rejects duplicate provider source references without partial publication', async () => {
+    const sources = createApprovedSources();
+    const requested = requestDraft();
+    if (requested.status !== 'queued') throw new Error('Expected queued chapter.');
+    const duplicateSource = { type: 'fact' as const, id: sources.factId };
+
+    expect(
+      await createWorker(
+        new MockChapterGenerationProvider({
+          title: 'Duplicate evidence',
+          body: 'This draft repeats the same evidence reference.',
+          usedSources: [duplicateSource, duplicateSource],
+        }),
+      ).processNext(),
+    ).toBe('failed');
+    expect(jobs.findById(requested.jobId)).toMatchObject({
+      status: 'failed',
+      lastErrorCode: 'INVALID_CHAPTER_OUTPUT',
+    });
+    expect(database.db.select().from(schema.chapterSources).all()).toEqual([]);
+    expect(
+      chapterService.reviewChapter(
+        demoSeedIds.familyId,
+        demoSeedIds.rosaPersonId,
+        requested.chapterDraftId,
+      ),
+    ).toMatchObject({ status: 'failed', title: null, body: null, sources: [] });
   });
 
   it('retries transient chapter-provider failures with the existing bounded job policy', async () => {
@@ -557,6 +655,9 @@ describe('Phase 7 grounded chapter pipeline', () => {
         'approve',
       ),
     ).toMatchObject({ status: 'already_applied', itemStatus: 'approved' });
+    expect(
+      privacy.getStoryContext(demoSeedIds.familyId, demoSeedIds.rosaPersonId),
+    ).not.toHaveProperty('recoverableChapterDrafts');
     expect(privacy.getStoryContext(demoSeedIds.familyId, relativeId).chapters).toEqual([
       expect.objectContaining({
         id: requested.chapterDraftId,
@@ -653,6 +754,9 @@ describe('Phase 7 grounded chapter pipeline', () => {
       ),
     ).toMatchObject({ status: 'updated', itemStatus: 'rejected' });
     expect(privacy.getStoryContext(demoSeedIds.familyId, relativeId).chapters).toEqual([]);
+    expect(
+      privacy.getStoryContext(demoSeedIds.familyId, demoSeedIds.rosaPersonId),
+    ).not.toHaveProperty('recoverableChapterDrafts');
     expect(
       chapterService.reviewChapter(
         demoSeedIds.familyId,

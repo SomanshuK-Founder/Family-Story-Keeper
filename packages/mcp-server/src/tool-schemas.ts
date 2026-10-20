@@ -8,6 +8,7 @@ import {
   contradictionResolutionTypeSchema,
   familyGraphResponseSchema,
   presentationReadInputSchema,
+  recoverableChapterDraftSchema,
   relationshipTypeSchema,
   searchFamilyStoryInputSchema,
   searchFamilyStoryOutputSchema,
@@ -178,6 +179,7 @@ export const getStoryContextOutputSchema = z.object({
       sourceCount: z.number().int().positive(),
     }),
   ),
+  recoverableChapterDrafts: z.array(recoverableChapterDraftSchema).optional(),
   conflicts: z.array(
     z.object({
       contradictionId: opaqueId,

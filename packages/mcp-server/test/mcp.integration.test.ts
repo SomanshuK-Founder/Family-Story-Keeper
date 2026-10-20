@@ -11,7 +11,15 @@ import {
   LATEST_PROTOCOL_VERSION,
   SUPPORTED_PROTOCOL_VERSIONS,
 } from '@modelcontextprotocol/sdk/types.js';
-import { demoSeedIds, DrizzleStoryMemoryRepository, schema } from '@story-keeper/database';
+import { MockChapterGenerationProvider } from '@story-keeper/bedrock';
+import {
+  demoSeedIds,
+  DrizzleChapterRepository,
+  DrizzleJobRepository,
+  DrizzleStoryMemoryRepository,
+  schema,
+} from '@story-keeper/database';
+import { ChapterWorker } from '@story-keeper/story-engine';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ALEXA_MCP_PROTOCOL_VERSION } from '../src/protocol.js';
@@ -193,6 +201,95 @@ describe('MCP Streamable HTTP integration', () => {
     );
     expect(relativeContext.personIdentities).toEqual([]);
     expect(JSON.stringify(relativeContext)).not.toContain('Raj');
+  });
+
+  it('rediscovers an owned private chapter draft after reconnect without browser persistence', async () => {
+    const runtime = await createRuntime(':memory:');
+    const sourceIds = addApprovedChapterSources(runtime);
+    const firstConnection = await connectClient(runtime.mcpUrl);
+    const requested = requestChapterDraftOutputSchema.parse(
+      (
+        await firstConnection.client.callTool({
+          name: 'request_chapter_draft',
+          arguments: {
+            familyId: demoSeedIds.familyId,
+            actorPersonId: demoSeedIds.rosaPersonId,
+            narratorPersonId: demoSeedIds.rosaPersonId,
+            chapterTopic: 'A private recovery chapter',
+          },
+        })
+      ).structuredContent,
+    );
+    expect(requested.status).toBe('queued');
+    if (requested.chapterDraftId === null) throw new Error('Expected chapter draft ID.');
+
+    await closeClient(firstConnection.client);
+    const { client } = await connectClient(runtime.mcpUrl);
+    const generatingContext = getStoryContextOutputSchema.parse(
+      (
+        await client.callTool({
+          name: 'get_story_context',
+          arguments: {
+            familyId: demoSeedIds.familyId,
+            actorPersonId: demoSeedIds.rosaPersonId,
+          },
+        })
+      ).structuredContent,
+    );
+    expect(generatingContext.recoverableChapterDrafts).toEqual([
+      { chapterDraftId: requested.chapterDraftId, status: 'generating' },
+    ]);
+
+    const worker = new ChapterWorker(
+      new DrizzleJobRepository(runtime.database),
+      new DrizzleChapterRepository(runtime.database),
+      new MockChapterGenerationProvider({
+        title: 'Recovered chapter',
+        body: 'A grounded chapter available after reconnect.',
+        usedSources: [{ type: 'fact', id: sourceIds[0] }],
+      }),
+      { workerId: 'chapter-recovery-test', retryDelayMs: 0 },
+    );
+    expect(await worker.processNext()).toBe('succeeded');
+
+    const readyContext = getStoryContextOutputSchema.parse(
+      (
+        await client.callTool({
+          name: 'get_story_context',
+          arguments: {
+            familyId: demoSeedIds.familyId,
+            actorPersonId: demoSeedIds.rosaPersonId,
+          },
+        })
+      ).structuredContent,
+    );
+    expect(readyContext.recoverableChapterDrafts).toEqual([
+      { chapterDraftId: requested.chapterDraftId, status: 'pending_review' },
+    ]);
+    expect(Object.keys(readyContext.recoverableChapterDrafts?.[0] ?? {}).sort()).toEqual([
+      'chapterDraftId',
+      'status',
+    ]);
+    const recoveredDraft = readyContext.recoverableChapterDrafts?.[0];
+    if (recoveredDraft === undefined) throw new Error('Expected a recoverable chapter draft.');
+
+    const review = reviewChapterOutputSchema.parse(
+      (
+        await client.callTool({
+          name: 'review_chapter',
+          arguments: {
+            familyId: demoSeedIds.familyId,
+            actorPersonId: demoSeedIds.rosaPersonId,
+            chapterDraftId: recoveredDraft.chapterDraftId,
+          },
+        })
+      ).structuredContent,
+    );
+    expect(review).toMatchObject({
+      chapterDraftId: requested.chapterDraftId,
+      status: 'pending_review',
+      title: 'Recovered chapter',
+    });
   });
 
   it('calls all Story Keeper tools and rejects malformed or unknown calls', async () => {
@@ -790,4 +887,27 @@ function addMember(
     })
     .run();
   return personId;
+}
+
+function addApprovedChapterSources(runtime: TestRuntime): readonly [string, string] {
+  const firstId = randomUUID();
+  const secondId = randomUUID();
+  const now = new Date();
+  runtime.database.db
+    .insert(schema.facts)
+    .values(
+      [firstId, secondId].map((id, index) => ({
+        id,
+        familyId: demoSeedIds.familyId,
+        subjectPersonId: demoSeedIds.rosaPersonId,
+        factType: `chapter_source_${String(index + 1)}`,
+        normalizedValue: `Approved source ${String(index + 1)}`,
+        confidence: 1,
+        approvalStatus: 'approved' as const,
+        createdAt: new Date(now.getTime() + index),
+        updatedAt: new Date(now.getTime() + index),
+      })),
+    )
+    .run();
+  return [firstId, secondId];
 }

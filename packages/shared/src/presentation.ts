@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { recoverableChapterDraftStatusSchema } from './chapter.js';
 import { approximateDateSchema, relationshipTypeSchema } from './story-memory.js';
 
 const opaqueIdSchema = z.uuid();
@@ -22,6 +23,14 @@ export const storyContextPersonIdentitySchema = z.discriminatedUnion('status', [
     .strict(),
 ]);
 export type StoryContextPersonIdentity = z.infer<typeof storyContextPersonIdentitySchema>;
+
+export const recoverableChapterDraftSchema = z
+  .object({
+    chapterDraftId: opaqueIdSchema,
+    status: recoverableChapterDraftStatusSchema,
+  })
+  .strict();
+export type RecoverableChapterDraft = z.infer<typeof recoverableChapterDraftSchema>;
 
 /**
  * Phase 8 frontend-facing contracts. Breaking changes require coordination with Person B;

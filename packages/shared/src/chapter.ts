@@ -15,6 +15,10 @@ export const chapterDraftStatuses = [
 export const chapterDraftStatusSchema = z.enum(chapterDraftStatuses);
 export type ChapterDraftStatus = z.infer<typeof chapterDraftStatusSchema>;
 
+export const recoverableChapterDraftStatuses = ['generating', 'pending_review', 'failed'] as const;
+export const recoverableChapterDraftStatusSchema = z.enum(recoverableChapterDraftStatuses);
+export type RecoverableChapterDraftStatus = z.infer<typeof recoverableChapterDraftStatusSchema>;
+
 export const chapterSourceReferenceSchema = z
   .object({
     type: chapterSourceTypeSchema,

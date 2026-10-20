@@ -379,6 +379,74 @@ describe('Phase 5 approval and privacy boundary', () => {
     ).toThrow(expect.objectContaining<Partial<StoryKeeperError>>({ code: 'STORY_ITEM_NOT_FOUND' }));
   });
 
+  it('discovers only narrator-owned recoverable chapter drafts in deterministic order', () => {
+    const olderGeneratingId = addChapterDraft(
+      'generating',
+      demoSeedIds.rosaPersonId,
+      new Date('2026-01-01T00:00:00.000Z'),
+    );
+    const pendingReviewId = addChapterDraft(
+      'pending_review',
+      demoSeedIds.rosaPersonId,
+      new Date('2026-01-02T00:00:00.000Z'),
+    );
+    const failedId = addChapterDraft(
+      'failed',
+      demoSeedIds.rosaPersonId,
+      new Date('2026-01-03T00:00:00.000Z'),
+    );
+    addChapterDraft('approved', demoSeedIds.rosaPersonId, new Date('2026-01-04T00:00:00.000Z'));
+    addChapterDraft('rejected', demoSeedIds.rosaPersonId, new Date('2026-01-05T00:00:00.000Z'));
+    addChapterDraft('superseded', demoSeedIds.rosaPersonId, new Date('2026-01-06T00:00:00.000Z'));
+    const otherNarratorId = addMember('Leela', 'narrator');
+    const otherNarratorDraftId = addChapterDraft(
+      'generating',
+      otherNarratorId,
+      new Date('2026-01-07T00:00:00.000Z'),
+    );
+
+    expect(
+      privacy.getStoryContext(demoSeedIds.familyId, demoSeedIds.rosaPersonId)
+        .recoverableChapterDrafts,
+    ).toEqual([
+      { chapterDraftId: failedId, status: 'failed' },
+      { chapterDraftId: pendingReviewId, status: 'pending_review' },
+      { chapterDraftId: olderGeneratingId, status: 'generating' },
+    ]);
+    expect(
+      privacy.getStoryContext(demoSeedIds.familyId, otherNarratorId).recoverableChapterDrafts,
+    ).toEqual([{ chapterDraftId: otherNarratorDraftId, status: 'generating' }]);
+    expect(privacy.getStoryContext(demoSeedIds.familyId, mayaId)).not.toHaveProperty(
+      'recoverableChapterDrafts',
+    );
+    expect(privacy.getStoryContext(demoSeedIds.familyId, childId)).not.toHaveProperty(
+      'recoverableChapterDrafts',
+    );
+
+    database.client
+      .prepare(
+        'UPDATE family_memberships SET status = ?, updated_at = ? WHERE family_id = ? AND person_id = ?',
+      )
+      .run('inactive', Date.now(), demoSeedIds.familyId, otherNarratorId);
+    expect(() => privacy.getStoryContext(demoSeedIds.familyId, otherNarratorId)).toThrow(
+      expect.objectContaining<Partial<StoryKeeperError>>({ code: 'ACTOR_NOT_AUTHORIZED' }),
+    );
+
+    const otherFamily = addFamily('Other Family', 'Other Narrator');
+    expect(() => privacy.getStoryContext(demoSeedIds.familyId, otherFamily.personId)).toThrow(
+      expect.objectContaining<Partial<StoryKeeperError>>({ code: 'ACTOR_NOT_AUTHORIZED' }),
+    );
+    expect(privacy.getStoryContext(otherFamily.familyId, otherFamily.personId)).not.toHaveProperty(
+      'recoverableChapterDrafts',
+    );
+    expect(
+      Object.keys(
+        privacy.getStoryContext(demoSeedIds.familyId, demoSeedIds.rosaPersonId)
+          .recoverableChapterDrafts?.[0] ?? {},
+      ).sort(),
+    ).toEqual(['chapterDraftId', 'status']);
+  });
+
   it('tombstones pending memory idempotently while preserving evidence and hiding conflicts', () => {
     const left = createFact('move_year', '1962');
     const right = createFact('move_year', '1964');
@@ -562,6 +630,62 @@ describe('Phase 5 approval and privacy boundary', () => {
       relationships: context.relationships.map(({ id }) => id),
       timelineEvents: context.timelineEvents.map(({ id }) => id),
     };
+  }
+
+  function addChapterDraft(
+    status: 'generating' | 'pending_review' | 'approved' | 'rejected' | 'failed' | 'superseded',
+    narratorPersonId: string,
+    createdAt: Date,
+    familyId: string = demoSeedIds.familyId,
+  ): string {
+    const chapterDraftId = randomUUID();
+    const generationJobId = randomUUID();
+    database.db
+      .insert(schema.jobs)
+      .values({
+        id: generationJobId,
+        familyId,
+        type: 'draft_chapter',
+        payload: JSON.stringify({
+          chapterDraftId,
+          sources: [
+            { type: 'fact', id: randomUUID() },
+            { type: 'fact', id: randomUUID() },
+          ],
+        }),
+        deduplicationKey: `test:${chapterDraftId}`,
+        status: 'queued',
+        attemptCount: 0,
+        maxAttempts: 3,
+        availableAt: createdAt,
+        createdAt,
+        updatedAt: createdAt,
+      })
+      .run();
+    const hasContent =
+      status === 'pending_review' ||
+      status === 'approved' ||
+      status === 'rejected' ||
+      status === 'superseded';
+    const reviewed = status === 'approved' || status === 'rejected';
+    database.db
+      .insert(schema.chapterDrafts)
+      .values({
+        id: chapterDraftId,
+        familyId,
+        narratorPersonId,
+        requestedTopic: 'Private recovery topic',
+        title: hasContent ? 'Private draft title' : null,
+        body: hasContent ? 'Private draft body' : null,
+        status,
+        generationJobId,
+        reviewedByPersonId: reviewed ? narratorPersonId : null,
+        reviewedAt: reviewed ? createdAt : null,
+        createdAt,
+        updatedAt: createdAt,
+      })
+      .run();
+    return chapterDraftId;
   }
 
   function addMember(

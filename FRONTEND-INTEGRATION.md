@@ -33,6 +33,12 @@ After `save_answer`: immediate success -> extraction runs asynchronously -> UI r
 ## Async chapter generation
 After `request_chapter_draft`: request accepted -> worker generates -> narrator retrieves/reviews later. Do not fake instant chapters when connected to real backend.
 
+After reload or reconnect, narrator mode may recover owned private draft handles from the optional
+`get_story_context.recoverableChapterDrafts` field, then call `review_chapter` with the returned ID.
+The field contains only IDs and `generating`, `pending_review`, or `failed` status; do not persist it
+in browser storage or URLs. Relative/child context omits it, while approved chapters continue to use
+the existing approved-family reads.
+
 ## Conflicts
 Frontend presents gentle wording and maps user choice only to supported backend resolution modes. Handle stale/already-resolved conflicts gracefully.
 
