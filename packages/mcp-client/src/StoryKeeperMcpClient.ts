@@ -3,8 +3,14 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import type { FetchLike, Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { CallToolResultSchema, type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import {
+  approvedChaptersResponseSchema,
+  familyGraphResponseSchema,
+  presentationReadInputSchema,
   searchFamilyStoryInputSchema,
   searchFamilyStoryOutputSchema,
+  timelineResponseSchema,
+  type ApprovedChaptersResponse,
+  type FamilyGraphResponse,
   type PresentationReadInput,
   type SearchFamilyStoryInput,
   type SearchFamilyStoryOutput,
@@ -23,7 +29,6 @@ import {
   getStoryContextResultSchema,
   listPendingConflictsInputSchema,
   listPendingConflictsResultSchema,
-  presentationReadInputSchema,
   queueFamilyQuestionInputSchema,
   queueFamilyQuestionResultSchema,
   requestChapterDraftInputSchema,
@@ -36,7 +41,6 @@ import {
   saveAnswerResultSchema,
   startInterviewInputSchema,
   startInterviewResultSchema,
-  timelineResponseSchema,
   type ApproveStoryItemInput,
   type ApproveStoryItemResult,
   type DeletePendingMemoryInput,
@@ -121,6 +125,8 @@ export interface StoryKeeperClient {
   requestChapterDraft(input: RequestChapterDraftInput): Promise<RequestChapterDraftResult>;
   reviewChapter(input: ReviewChapterInput): Promise<ReviewChapterResult>;
   getTimeline(input: PresentationReadInput): Promise<TimelineResponse>;
+  getFamilyGraph(input: PresentationReadInput): Promise<FamilyGraphResponse>;
+  getApprovedChapters(input: PresentationReadInput): Promise<ApprovedChaptersResponse>;
   searchFamilyStory(input: SearchFamilyStoryInput): Promise<SearchFamilyStoryOutput>;
 }
 
@@ -277,6 +283,24 @@ export class StoryKeeperMcpClient implements StoryKeeperClient {
       'get_timeline',
       presentationReadInputSchema,
       timelineResponseSchema,
+      input,
+    );
+  }
+
+  public getFamilyGraph(input: PresentationReadInput): Promise<FamilyGraphResponse> {
+    return this.callValidatedTool(
+      'get_family_graph',
+      presentationReadInputSchema,
+      familyGraphResponseSchema,
+      input,
+    );
+  }
+
+  public getApprovedChapters(input: PresentationReadInput): Promise<ApprovedChaptersResponse> {
+    return this.callValidatedTool(
+      'get_approved_chapters',
+      presentationReadInputSchema,
+      approvedChaptersResponseSchema,
       input,
     );
   }

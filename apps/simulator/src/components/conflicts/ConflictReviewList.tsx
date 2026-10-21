@@ -177,6 +177,12 @@ function ConflictCard({ conflict, sequence, activeResolution, onResolve }: Confl
           role="group"
           tabIndex={-1}
           aria-labelledby={`${confirmationId}-confirmation-title`}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape' && activeResolution === null) {
+              event.preventDefault();
+              cancelConfirmation();
+            }
+          }}
         >
           <h4 id={`${confirmationId}-confirmation-title`}>{confirmation.heading}</h4>
           <p>{confirmation.consequence}</p>

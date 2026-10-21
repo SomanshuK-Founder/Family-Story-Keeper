@@ -1,6 +1,7 @@
-# Family Story Keeper — Backend
+# Family Story Keeper
 
-Pre-implementation backend specification for the Alexa+ track of the Amazon Developer Hackathon.
+Family Story Keeper is an implemented local release candidate for the Alexa+ track of the Amazon
+Developer Hackathon.
 
 ## Product
 Family Story Keeper is a voice-first assistant that interviews relatives over short sessions and turns approved memories into a family timeline and written chapters.
@@ -9,8 +10,8 @@ Core trust rule:
 
 **AI can assist family history; it cannot silently become the authority over family history.**
 
-## Person A Context
-This documentation is prepared before backend implementation so Codex and the human developer share one architecture.
+## Project documentation
+These documents define the shared architecture and release contracts.
 
 Read in order:
 1. `AGENTS.md`
@@ -29,7 +30,7 @@ Living docs:
 - `FRICTION-LOG.md`
 - `PRODUCT-FEEDBACK.md`
 
-## Planned Backend Stack
+## Stack
 - Node.js 24 LTS
 - TypeScript
 - pnpm
@@ -43,9 +44,12 @@ Living docs:
 - SQLite FTS5
 
 ## Status
-**Documentation complete. Implementation has not started.**
+Person A backend Phases 0–10 and Person B frontend/integration Phases 0–9 are complete and frozen.
+Person B Phase 10 is the current hardening release candidate. MCP Apps, production voice,
+deployment, and later-phase product work are not implemented.
 
-Do not begin Phase 0 until explicitly requested.
+See `FRONTEND-INTEGRATION.md` for the local four-app runbook and
+`packages/mcp-server/README.md` for the backend/tool contract and recovery runbook.
 
 ## Core Invariants
 - product state is database-backed

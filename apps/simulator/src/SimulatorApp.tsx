@@ -105,6 +105,7 @@ export function SimulatorApp({
     'idle',
   );
   const [inspectorError, setInspectorError] = useState<string | null>(null);
+  const connectionRequestRef = useRef(0);
   const inspectorRequestRef = useRef(0);
   const interviewRequestRef = useRef(0);
   const familyQuestionMutationRef = useRef(0);
@@ -142,6 +143,7 @@ export function SimulatorApp({
 
   useEffect(
     () => () => {
+      connectionRequestRef.current += 1;
       inspectorRequestRef.current += 1;
       interviewRequestRef.current += 1;
       familyQuestionMutationRef.current += 1;
@@ -159,6 +161,8 @@ export function SimulatorApp({
   );
 
   async function connect(): Promise<void> {
+    const connectionId = connectionRequestRef.current + 1;
+    connectionRequestRef.current = connectionId;
     const isReconnect = connectionStatus === 'connected' || connectionStatus === 'error';
     cancelProcessing();
     cancelConflictMutation();
@@ -177,6 +181,7 @@ export function SimulatorApp({
     setNotice(isReconnect ? 'Reconnecting to Story Keeper…' : 'Connecting to Story Keeper…');
     try {
       const tools = isReconnect ? await client.reconnect() : await client.connect();
+      if (connectionRequestRef.current !== connectionId) return;
       setToolCount(tools.length);
       setConnectionStatus('connected');
       setNotice('Connected. Story Keeper’s interview tools are ready.');
@@ -187,12 +192,17 @@ export function SimulatorApp({
         const resumedInterviewId = await resumeInterview(client, requestId);
         if (resumedInterviewId === null) return;
         await loadInspector(inspectorActor, resumedInterviewId);
-        if (interviewRequestRef.current !== requestId) return;
+        if (
+          connectionRequestRef.current !== connectionId ||
+          interviewRequestRef.current !== requestId
+        )
+          return;
         setNotice('Reconnected. Rosa’s interview was restored from Story Keeper.');
       } else {
         await loadInspector(inspectorActor, null);
       }
     } catch (caught: unknown) {
+      if (connectionRequestRef.current !== connectionId) return;
       showError(caught, 'Story Keeper is unavailable. Check the server and try again.');
       setConnectionStatus('error');
       setToolCount(null);

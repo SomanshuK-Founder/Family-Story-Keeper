@@ -121,6 +121,21 @@ a {
 .advance-button:hover {
   background: var(--accent-dark);
 }
+.secondary-button {
+  min-height: 3rem;
+  padding: 0.7rem 1rem;
+  border: 1px solid var(--accent);
+  border-radius: 0.65rem;
+  color: var(--accent-dark);
+  background: var(--surface);
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+.secondary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
 .day-status {
   grid-column: 1 / -1;
   justify-self: end;
@@ -176,6 +191,19 @@ a {
   border: 1px solid var(--border);
   border-radius: 1rem;
   box-shadow: 0 14px 35px rgb(66 43 31 / 8%);
+}
+.app-error-boundary {
+  max-width: 42rem;
+  padding: clamp(1.5rem, 5vw, 3rem);
+}
+.app-error-boundary h1 {
+  margin: 0 0 0.75rem;
+  font-family: Georgia, serif;
+}
+.app-error-boundary p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
 }
 .empty-copy {
   color: var(--muted);

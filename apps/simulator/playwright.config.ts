@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { defineConfig } from '@playwright/test';
 
 const workspaceRoot = resolve(import.meta.dirname, '../..');
-const databasePath = resolve(workspaceRoot, 'output/playwright/person-b-phase-9.sqlite');
+const databasePath = resolve(workspaceRoot, 'output/playwright/person-b-phase-10.sqlite');
 
 export default defineConfig({
   testDir: './e2e',
@@ -44,6 +44,20 @@ export default defineConfig({
       command: 'corepack pnpm --filter @story-keeper/timeline dev',
       cwd: workspaceRoot,
       url: 'http://localhost:4174',
+      reuseExistingServer: false,
+      timeout: 30_000,
+    },
+    {
+      command: 'corepack pnpm --filter @story-keeper/family-tree dev',
+      cwd: workspaceRoot,
+      url: 'http://localhost:4175',
+      reuseExistingServer: false,
+      timeout: 30_000,
+    },
+    {
+      command: 'corepack pnpm --filter @story-keeper/chapter-review dev',
+      cwd: workspaceRoot,
+      url: 'http://localhost:4176',
       reuseExistingServer: false,
       timeout: 30_000,
     },

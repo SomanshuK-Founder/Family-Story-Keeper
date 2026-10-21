@@ -1,9 +1,9 @@
 // @vitest-environment happy-dom
 
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { StoryKeeperClient } from '@story-keeper/mcp-client';
 import { timelineResponseSchema, type TimelineResponse } from '@story-keeper/shared';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { TimelineApp } from './TimelineApp.js';
 import { timelineFixture } from './fixture.js';
 import './test-setup.js';
@@ -57,6 +57,28 @@ describe('timeline fixture', () => {
     );
     expect(screen.queryByText('Rosa was born')).not.toBeInTheDocument();
   });
+
+  it('prevents duplicate loads and ignores completion after unmount', async () => {
+    let finish: ((timeline: TimelineResponse) => void) | undefined;
+    const client = createClient(timelineFixture);
+    const getTimeline = vi.fn<StoryKeeperClient['getTimeline']>(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    client.getTimeline = getTimeline;
+    const { unmount } = render(<TimelineApp createClient={() => client} />);
+    const button = screen.getByRole('button', { name: 'Connect and load timeline' });
+    fireEvent.click(button);
+    fireEvent.click(button);
+    await waitFor(() => {
+      expect(getTimeline).toHaveBeenCalledTimes(1);
+    });
+    unmount();
+    finish?.(timelineFixture);
+    await Promise.resolve();
+  });
 });
 
 function createClient(timeline: TimelineResponse): StoryKeeperClient {
@@ -76,6 +98,8 @@ function createClient(timeline: TimelineResponse): StoryKeeperClient {
     requestChapterDraft: () => Promise.reject(new Error('Not used')),
     reviewChapter: () => Promise.reject(new Error('Not used')),
     getTimeline: () => Promise.resolve(timeline),
+    getFamilyGraph: () => Promise.resolve({ nodes: [], edges: [] }),
+    getApprovedChapters: () => Promise.resolve({ chapters: [] }),
     searchFamilyStory: () => Promise.resolve({ results: [] }),
   };
 }

@@ -65,10 +65,11 @@ Search UI consumes frozen search DTOs. Do not implement browser FTS, direct DB q
 Real MCP client integration begins in Person B Phase 1 using initialize, tools/list, and tools/call through the official SDK and existing endpoint.
 
 ## MCP Apps
-Actual MCP Apps are Person B Phase 9. Simulator and MCP Apps must consume the same shared DTOs.
+MCP App resources are outside the current release scope and are not implemented.
 
 ## Voice
-Voice is presentation/input only and must map to the same underlying actions as typed fallback. It must degrade gracefully.
+Production voice integration is outside the current release scope. Any future voice input must map
+to the same underlying actions as typed fallback and degrade gracefully.
 
 ## Styling
 Use shared tokens/primitives where useful; avoid a large design system. Cover typography, spacing, surfaces, focus states, radius, elevation, restrained motion, and semantic status.

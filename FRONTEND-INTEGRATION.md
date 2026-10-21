@@ -55,7 +55,37 @@ Search: use `search_family_story`; never query SQLite or duplicate FTS in browse
 Map backend errors to safe UI states: unauthorized, validation, state conflict, provider unavailable, no result, generic unexpected. Keep technical details out of user UI.
 
 ## MCP Apps
-Person B Phase 9 owns actual MCP Apps. They must use the same shared contracts as simulator UI.
+MCP App resources are outside the current product scope and are not implemented.
+
+## Local frontend runbook
+
+Use Node 24 and the pinned pnpm version. From the repository root:
+
+```text
+corepack pnpm install --frozen-lockfile
+Copy-Item .env.example .env
+corepack pnpm db:migrate
+corepack pnpm db:seed
+corepack pnpm dev
+```
+
+The combined development command starts the MCP server on `http://127.0.0.1:3000/mcp` and the four
+frontend surfaces: simulator/search on port 4173, timeline on 4174, family tree on 4175, and
+approved chapters on 4176. Each Vite server proxies `/mcp` to the local MCP server. If a previous
+run still owns one of these ports, stop that process before restarting; do not change ports in only
+one app.
+
+The deterministic seed is synthetic and idempotent. The simulator contains actor-scoped interview,
+memory, conflict, family-question, chapter-review, and search flows. Timeline, family tree, and
+approved chapters perform real approved-family MCP reads. Reloads recover canonical backend state;
+unsent answers, composer text, search queries/results, and other private transient state stay only
+in React memory and are cleared on actor or connection changes.
+
+Run `corepack pnpm test`, `corepack pnpm test:e2e:simulator`, and
+`corepack pnpm demo:smoke` for component/integration, real-stack browser, and deterministic backend
+coverage. Tests use deterministic providers and must not require AWS credentials. The simulator and
+approved-family presentation builds currently emit informational Vite chunk-size advisories from
+the shared validated MCP client bundle; they are not runtime errors.
 
 ## Backend change rule
 If a genuine gap is found: document the failing journey, prove existing contract cannot safely satisfy it, propose the smallest additive change, run all backend regression tests, and preserve all required fields.

@@ -99,7 +99,7 @@ describe('ChapterDraftPanel', () => {
     expect(
       screen.getByText(/source memories and their history will remain preserved/),
     ).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.keyDown(confirmation, { key: 'Escape' });
     await waitFor(() => {
       expect(reject).toHaveFocus();
     });

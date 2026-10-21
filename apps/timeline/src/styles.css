@@ -15,6 +15,11 @@
 .timeline-error {
   color: #662c1f;
 }
+.timeline-panel,
+.timeline-panel article {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 @media (max-width: 520px) {
   .timeline-actions {
     display: grid;

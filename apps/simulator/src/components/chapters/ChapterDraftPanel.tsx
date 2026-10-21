@@ -230,6 +230,12 @@ export function ChapterDraftPanel({
               role="group"
               tabIndex={-1}
               aria-labelledby={confirmationTitleId}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape' && !mutationActive) {
+                  event.preventDefault();
+                  cancelReject();
+                }
+              }}
             >
               <h4 id={confirmationTitleId}>Reject this chapter?</h4>
               <p>It will not appear in family-visible story views.</p>

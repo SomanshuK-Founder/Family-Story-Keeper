@@ -48,15 +48,15 @@ Build narrator chapter review UI using `request_chapter_draft`, `review_chapter`
 
 Acceptance: chapter moves through real generated/pending-review/reviewed/approved backend state; family-visible chapter surfaces show only approved chapters.
 
-## Phase 9 — MCP Apps
-Build actual MCP Apps: Timeline, Family Graph, Chapter Review, using official MCP Apps resources/skills. Simulator and MCP Apps must use identical shared Story Keeper schemas.
-
-Acceptance: simulator and MCP Apps consume identical backend/shared data contracts.
-
-## Phase 10 — Search presentation
+## Phase 9 — Search presentation
 Integrate `search_family_story` with query input, loading, empty state, bounded result list, approved snippets, source type, and safe metadata.
 
-Acceptance: query like “What did Grandma say about the farm?” returns grounded approved results through the real tool.
+Acceptance: a query such as “What did Grandma say about the farm?” returns grounded approved results through the real tool.
+
+## Phase 10 — Release hardening
+Harden shared frontend safety, real presentation-tool integration, connection lifecycle, async race handling, accessibility, responsive behavior, deterministic release coverage, and handoff documentation.
+
+Acceptance: all release gates pass with the frozen 15-tool MCP contract and no production backend behavior change.
 
 ## Phase 11 — Simulator polish
 Remove admin-dashboard feel; make simulator Echo Show-like; include Rosa/Maya/+3 Days, voice input where reliable, typed fallback, polished loading states, contextual visual pane, and restrained transitions. Hide/remove developer panels from primary demo.

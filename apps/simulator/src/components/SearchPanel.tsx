@@ -59,6 +59,7 @@ export function SearchPanel({
           <span>Search as</span>
           <select
             value={actor}
+            disabled={!connected}
             onChange={(event) => {
               onActorChange(event.currentTarget.value as InspectorActor);
             }}

@@ -7,9 +7,13 @@ test('Rosa and Maya use the real memory and family-question lifecycle safely', a
 }, testInfo) => {
   const consoleErrors: string[] = [];
   const consoleMessages: string[] = [];
+  const pageErrors: string[] = [];
   page.on('console', (message) => {
     consoleMessages.push(message.text());
     if (message.type() === 'error') consoleErrors.push(message.text());
+  });
+  page.on('pageerror', (error) => {
+    pageErrors.push(error.message);
   });
 
   await page.goto('/');
@@ -499,6 +503,15 @@ test('Rosa and Maya use the real memory and family-question lifecycle safely', a
   await page.getByLabel('Search as').selectOption('rosa');
   await page.getByRole('button', { name: 'Open interview' }).click();
 
+  await page
+    .getByRole('region', { name: 'Review story memories' })
+    .getByRole('button', { name: 'Approve Child relationship' })
+    .first()
+    .click();
+  await expect(
+    page.getByText('Memory approved. Story Keeper refreshed the latest story state.'),
+  ).toBeVisible();
+
   await page.setViewportSize({ width: 1440, height: 900 });
   await expect(page.getByRole('heading', { name: 'Needs clarification' })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
@@ -511,9 +524,67 @@ test('Rosa and Maya use the real memory and family-question lifecycle safely', a
   await expect(page.getByText('Timeline loaded from Story Keeper.')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Moved near the old market' })).toBeVisible();
   await expect(page.getByText('1962–1964')).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath('phase-10-timeline-1440.png'),
+    fullPage: true,
+  });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   );
+  await page.setViewportSize({ width: 820, height: 900 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  await page.screenshot({ path: testInfo.outputPath('phase-10-timeline-820.png'), fullPage: true });
+
+  await page.goto('http://localhost:4175/');
+  await expect(page).toHaveTitle('Story Keeper Family Tree');
+  await expect(page.locator('vite-error-overlay')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Connect and load family tree' }).click();
+  await expect(page.getByText('Family tree loaded from Story Keeper.')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Rosa' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Maya' })).toBeVisible();
+  await expect(page.getByText(/Child · 1 source/)).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  await page.screenshot({
+    path: testInfo.outputPath('phase-10-family-tree-820.png'),
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  await page.screenshot({
+    path: testInfo.outputPath('phase-10-family-tree-1440.png'),
+    fullPage: true,
+  });
+
+  await page.setViewportSize({ width: 820, height: 900 });
+  await page.goto('http://localhost:4176/');
+  await expect(page).toHaveTitle('Story Keeper Chapter Review');
+  await expect(page.locator('vite-error-overlay')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Connect and load chapters' }).click();
+  await expect(page.getByText('Approved chapters loaded from Story Keeper.')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Beside the Old Market' })).toBeVisible();
+  await expect(page.getByText(chapterBody)).toBeVisible();
+  await expect(page.getByRole('button', { name: /approve|reject|request changes/i })).toHaveCount(
+    0,
+  );
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  await page.screenshot({ path: testInfo.outputPath('phase-10-chapters-820.png'), fullPage: true });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  await page.screenshot({
+    path: testInfo.outputPath('phase-10-chapters-1440.png'),
+    fullPage: true,
+  });
+
   expect(consoleMessages.join('\n')).not.toContain(rawAnswer);
   expect(consoleMessages.join('\n')).not.toContain(queuedQuestionText);
   expect(consoleMessages.join('\n')).not.toContain(privateDraft);
@@ -523,4 +594,5 @@ test('Rosa and Maya use the real memory and family-question lifecycle safely', a
   expect(consoleMessages.join('\n')).not.toContain(searchQuery);
   expect(consoleMessages.join('\n')).not.toContain(privateSearchDraft);
   expect(consoleErrors).toEqual([]);
+  expect(pageErrors).toEqual([]);
 });

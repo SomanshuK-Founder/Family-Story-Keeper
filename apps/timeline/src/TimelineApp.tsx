@@ -19,33 +19,46 @@ export function TimelineApp({ createClient = createDefaultClient }: TimelineAppP
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [timeline, setTimeline] = useState<TimelineResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const requestRef = useRef(0);
+  const loadingRef = useRef(false);
 
   useEffect(
     () => () => {
+      requestRef.current += 1;
+      loadingRef.current = false;
       void client.disconnect();
     },
     [client],
   );
 
   async function loadTimeline(): Promise<void> {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
+    const requestId = requestRef.current + 1;
+    requestRef.current = requestId;
     setStatus('loading');
     setTimeline(null);
     setError(null);
     try {
       await client.reconnect();
+      if (requestRef.current !== requestId) return;
       const result = await client.getTimeline({
         familyId: storyKeeperDemoIds.familyId,
         actorPersonId: storyKeeperDemoIds.mayaPersonId,
       });
+      if (requestRef.current !== requestId) return;
       setTimeline(result);
       setStatus('ready');
     } catch (caught: unknown) {
+      if (requestRef.current !== requestId) return;
       setStatus('error');
       setError(
         caught instanceof StoryKeeperClientError
           ? caught.message
           : 'The family timeline could not be loaded. Try again.',
       );
+    } finally {
+      if (requestRef.current === requestId) loadingRef.current = false;
     }
   }
 

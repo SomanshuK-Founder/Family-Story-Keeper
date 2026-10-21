@@ -1,5 +1,6 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
+import { AppErrorBoundary } from '@story-keeper/ui';
 import '@story-keeper/ui/styles.css';
 import './styles.css';
 import { FamilyTreeApp } from './FamilyTreeApp.js';
@@ -9,6 +10,8 @@ if (root === null) throw new Error('Family tree root element is missing.');
 
 createRoot(root).render(
   <StrictMode>
-    <FamilyTreeApp />
+    <AppErrorBoundary>
+      <FamilyTreeApp />
+    </AppErrorBoundary>
   </StrictMode>,
 );

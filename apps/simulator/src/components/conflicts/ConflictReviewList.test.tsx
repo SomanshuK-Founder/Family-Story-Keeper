@@ -90,7 +90,8 @@ describe('ConflictReviewList', () => {
     ).toBeVisible();
     expect(within(region).getByText(/does not approve either memory/i)).toBeVisible();
 
-    fireEvent.click(within(region).getByRole('button', { name: 'Go back' }));
+    if (confirmation === null) throw new Error('Expected confirmation.');
+    fireEvent.keyDown(confirmation, { key: 'Escape' });
     await waitFor(() => expect(keepFirst).toHaveFocus());
     fireEvent.click(keepFirst);
     fireEvent.click(within(region).getByRole('button', { name: 'Confirm: Keep the first memory' }));

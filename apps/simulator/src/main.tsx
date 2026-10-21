@@ -1,5 +1,6 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
+import { AppErrorBoundary } from '@story-keeper/ui';
 import '@story-keeper/ui/styles.css';
 import './styles.css';
 import { SimulatorApp } from './SimulatorApp.js';
@@ -9,6 +10,8 @@ if (root === null) throw new Error('Simulator root element is missing.');
 
 createRoot(root).render(
   <StrictMode>
-    <SimulatorApp />
+    <AppErrorBoundary>
+      <SimulatorApp />
+    </AppErrorBoundary>
   </StrictMode>,
 );

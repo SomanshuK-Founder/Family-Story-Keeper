@@ -8,7 +8,7 @@ import type {
   ListPendingConflictsResult,
   StoryKeeperClient,
 } from '@story-keeper/mcp-client';
-import { StoryKeeperClientError } from '@story-keeper/mcp-client';
+import { STORY_KEEPER_TOOL_NAMES, StoryKeeperClientError } from '@story-keeper/mcp-client';
 import { storyKeeperDemoIds } from '@story-keeper/shared';
 
 import { SimulatorApp } from './SimulatorApp.js';
@@ -244,6 +244,12 @@ function createClient() {
       }),
     ),
     getTimeline: vi.fn<StoryKeeperClient['getTimeline']>(() => Promise.resolve({ items: [] })),
+    getFamilyGraph: vi.fn<StoryKeeperClient['getFamilyGraph']>(() =>
+      Promise.resolve({ nodes: [], edges: [] }),
+    ),
+    getApprovedChapters: vi.fn<StoryKeeperClient['getApprovedChapters']>(() =>
+      Promise.resolve({ chapters: [] }),
+    ),
     searchFamilyStory: vi.fn<StoryKeeperClient['searchFamilyStory']>(() =>
       Promise.resolve({ results: [] }),
     ),
@@ -463,6 +469,29 @@ describe('SimulatorApp', () => {
       screen.queryByText('What do you remember about your childhood street?'),
     ).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Start / Resume interview' })).toBeDisabled();
+  });
+
+  it('ignores a connection that completes after unmount', async () => {
+    let finishConnect: ((toolNames: string[]) => void) | undefined;
+    const getStoryContext = vi.fn<StoryKeeperClient['getStoryContext']>();
+    const client = createClient();
+    client.connect = vi.fn(
+      () =>
+        new Promise<string[]>((resolve) => {
+          finishConnect = resolve;
+        }),
+    );
+    client.getStoryContext = getStoryContext;
+
+    const { unmount } = render(<SimulatorApp createClient={() => client} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    expect(screen.getByText('Connecting…')).toBeInTheDocument();
+    unmount();
+    finishConnect?.([...STORY_KEEPER_TOOL_NAMES]);
+
+    await waitFor(() => {
+      expect(getStoryContext).not.toHaveBeenCalled();
+    });
   });
 
   it('clears previously loaded memory when reconnect fails', async () => {

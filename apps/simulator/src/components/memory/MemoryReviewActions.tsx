@@ -139,6 +139,12 @@ export function MemoryReviewActions({
           role="group"
           tabIndex={-1}
           aria-labelledby={`${confirmationId}-title`}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape' && activeMutation === null) {
+              event.preventDefault();
+              cancelConfirmation();
+            }
+          }}
         >
           <h4 id={`${confirmationId}-title`}>{confirmation.heading}</h4>
           <p>{confirmation.consequence}</p>

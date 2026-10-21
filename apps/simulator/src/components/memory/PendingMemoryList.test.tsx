@@ -187,7 +187,8 @@ describe('PendingMemoryList', () => {
     expect(document.activeElement).toBe(confirmation);
     expect(screen.getByText(/marked rejected/i)).toBeVisible();
     expect(screen.getByText(/original interview answer and source history/i)).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    if (confirmation === null) throw new Error('Expected confirmation.');
+    fireEvent.keyDown(confirmation, { key: 'Escape' });
     await waitFor(() => expect(reject).toHaveFocus());
 
     fireEvent.click(reject);

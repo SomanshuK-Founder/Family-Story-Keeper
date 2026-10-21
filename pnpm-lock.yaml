@@ -235,6 +235,9 @@ importers:
 
   apps/chapter-review:
     dependencies:
+      '@story-keeper/mcp-client':
+        specifier: workspace:*
+        version: link:../../packages/mcp-client
       '@story-keeper/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -250,6 +253,9 @@ importers:
 
   apps/family-tree:
     dependencies:
+      '@story-keeper/mcp-client':
+        specifier: workspace:*
+        version: link:../../packages/mcp-client
       '@story-keeper/shared':
         specifier: workspace:*
         version: link:../../packages/shared

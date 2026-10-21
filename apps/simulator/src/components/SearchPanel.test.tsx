@@ -178,5 +178,6 @@ describe('SearchPanel', () => {
       screen.getByText('Connect to Story Keeper to search approved family stories.'),
     ).toBeVisible();
     expect(screen.getByRole('button', { name: 'Search' })).toBeDisabled();
+    expect(screen.getByRole('combobox', { name: 'Search as' })).toBeDisabled();
   });
 });

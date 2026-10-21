@@ -103,6 +103,8 @@ function baseSession() {
             status: 'queued',
           }),
         );
+      if (name === 'get_family_graph') return Promise.resolve(result({ nodes: [], edges: [] }));
+      if (name === 'get_approved_chapters') return Promise.resolve(result({ chapters: [] }));
       if (name === 'search_family_story')
         return Promise.resolve(
           result({
@@ -197,6 +199,23 @@ describe('StoryKeeperMcpClient', () => {
     });
     await expect(client.getTimeline({ familyId, actorPersonId: mayaPersonId })).resolves.toEqual({
       items: [],
+    });
+    await expect(client.getFamilyGraph({ familyId, actorPersonId: mayaPersonId })).resolves.toEqual(
+      {
+        nodes: [],
+        edges: [],
+      },
+    );
+    await expect(
+      client.getApprovedChapters({ familyId, actorPersonId: mayaPersonId }),
+    ).resolves.toEqual({ chapters: [] });
+    expect(session.callTool).toHaveBeenCalledWith('get_family_graph', {
+      familyId,
+      actorPersonId: mayaPersonId,
+    });
+    expect(session.callTool).toHaveBeenCalledWith('get_approved_chapters', {
+      familyId,
+      actorPersonId: mayaPersonId,
     });
     await expect(
       client.searchFamilyStory({
